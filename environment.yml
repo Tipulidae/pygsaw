@@ -6,6 +6,7 @@ dependencies:
   - python=3.8.3
   - pip=20.1.1
   - pytest
+  - pillow=7.2
   - pip:
     - pyglet==1.5.5
     - glooey==0.3.0
