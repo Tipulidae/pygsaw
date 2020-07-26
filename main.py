@@ -1,11 +1,16 @@
+from math import sqrt
+import time
+import random
+
 import pyglet
 import pyglet.gl as gl
 import vecrec
-import random
 from PIL import Image, ImageDraw
+from tqdm import tqdm
+from pyqtree import Index
 
-from math import sqrt
 
+from bezier import Point, make_jigsaw_cut
 from sprite import Sprite
 
 pyglet.resource.path = ['resources']
@@ -38,8 +43,8 @@ class OrthographicProjection:
         self.clip_port = vecrec.Rect(
             left=self.clip_port.left,
             bottom=self.clip_port.bottom,
-            width=self.clip_port.width * (new_width / old_width),
-            height=self.clip_port.height * (new_height / old_height)
+            width=round(self.clip_port.width * (new_width / old_width)),
+            height=round(self.clip_port.height * (new_height / old_height))
         )
         self.update()
 
@@ -49,11 +54,12 @@ class OrthographicProjection:
         x_ = self.clip_port.width * x / self.view_port.width
         y_ = self.clip_port.height * y / self.view_port.height
         self.clip_port = vecrec.Rect(
-            left=self.clip_port.left + x_ * scale,
-            bottom=self.clip_port.bottom + y_ * scale,
-            width=self.clip_port.width / level_diff,
-            height=self.clip_port.height / level_diff
+            left=int(self.clip_port.left + x_ * scale),
+            bottom=int(self.clip_port.bottom + y_ * scale),
+            width=round(self.clip_port.width / level_diff),
+            height=round(self.clip_port.height / level_diff)
         )
+        # print(f"{self.clip_port}")
         self.update()
 
     def update(self):
@@ -77,18 +83,28 @@ class OrthographicProjection:
 
 
 class Kitten(Sprite):
-    def __init__(self, *args, scale=1.0, **kwargs):
+    def __init__(self, *args, mask=None, **kwargs):
         super().__init__(*args, usage='stream', **kwargs)
-        self.scale = scale
+        self.mask = mask
         self.selected = False
+        self.old_bbox = self.bbox
 
     @property
     def rect(self):
         return vecrec.Rect(
-            left=self.x,
-            bottom=self.y,
-            width=self.width,
-            height=self.height
+            left=self.x + self.width/6,
+            bottom=self.y + self.height/6,
+            width=self.width * 2/3,
+            height=self.height * 2/3
+        )
+
+    @property
+    def bbox(self):
+        return (
+            self.rect.left,
+            self.rect.bottom,
+            self.rect.right,
+            self.rect.top
         )
 
     def select(self):
@@ -103,6 +119,12 @@ class Kitten(Sprite):
 
     def move(self, dx, dy):
         self.update(x=self.x + dx, y=self.y + dy)
+
+    def is_pixel_inside_hitbox(self, x, y):
+        if self.mask:
+            return self.mask.getpixel((x - self.x, y - self.y)) == 1
+        else:
+            return True
 
 
 class SelectionBox:
@@ -129,6 +151,7 @@ class Main(pyglet.window.Window):
         self.batch = pyglet.graphics.Batch()
         self.group = pyglet.graphics.Group()
         self.fps = pyglet.window.FPSDisplay(window=self)
+        self.pieces = []
         self.kittens = []
         self.held_kittens = []
         self.selection_box = None
@@ -140,42 +163,54 @@ class Main(pyglet.window.Window):
             zoom=1.0
         )
         self.max_kittens = max_kittens
+        self.quadtree = Index(bbox=(-10000, -10000, 10000, 10000))
         self.add_kittens()
         # self.view_area = vecrec.Rect(0, 0, *self.get_viewport_size())
         # self._zoom_level = 1.0
         self.old_width, self.old_height = self.get_viewport_size()
+
         print(f"{self.get_viewport_size()}")
 
     def add_kittens(self):
-        scale = 1/sqrt(self.max_kittens)
         N = int(sqrt(self.max_kittens))
-
-        img = pyglet.resource.image('kitten.png')
-        step_x = img.width*scale + 2
-        step_y = img.height*scale + 2
-        w = img.width // N
-        h = img.height // N
-
         kitten_image = Image.open("pygsaw/resources/hongkong.jpg").convert("RGBA")
         w = kitten_image.width // N
         h = kitten_image.height // N
-        mask = Image.new("1", (w, h), 0)
-        # img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-        d = ImageDraw.Draw(mask)
-        d.ellipse([0, 0, w, h], fill=1)
 
-        def foo(i):
-            img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-            l = w * (i % N)
-            t = h * (i // N)
+        pieces = make_jigsaw_cut(w, h, N, N)
+        print(f"{pieces[0].contour.evaluate(10)}")
+
+
+        # temp
+        mask = Image.new("1", (2*w, 2*h), 0)
+        mask_draw = ImageDraw.Draw(mask)
+        mask_draw.ellipse([w//2, h//2, w//2 + w, h//2 + h], fill=1)
+
+        # !temp
+
+        def piece_img(pid):
+            img = Image.new("RGBA", (2*w, 2*h), (0, 0, 0, 0))
+            # mask = Image.new("1", (2*w, 2*h), 0)
+            # mask_draw = ImageDraw.Draw(mask)
+            # mask_draw.polygon(
+            #     list(map(Point.tuple, pieces[pid].contour.evaluate(10))),
+            #     fill=1,
+            #     outline=1
+            # )
+
+            l = w * (pid % N) - w//2
+            t = h * (pid // N) - h//2
             img.paste(
-                kitten_image.crop((l, t, l+w, t+h)),
+                kitten_image.crop((l, t, l+2*w, t+2*h)),
                 mask=mask
             )
+
+            # img.save(f"foo{pid}.bmp")
+
             return img
 
         imgs = [
-            foo(i) for i in range(self.max_kittens)
+            piece_img(i) for i in tqdm(range(N*N))
         ]
 
         bin = pyglet.image.atlas.TextureBin()
@@ -185,22 +220,21 @@ class Main(pyglet.window.Window):
                     img.width,
                     img.height,
                     'RGBA',
-                    img.tobytes()
+                    img.tobytes(),
+                    -img.width*4
                 )
             ) for img in imgs
         ]
 
         self.kittens = [
             Kitten(
-                # img.get_region(w*(i%N), h*(i//N), w, h),
                 img,
-                # x=(i % N) * step_x,
-                # y=(i // N) * step_y,
+                mask=mask,
+                # x=pieces[i].origin.x,
+                # y=pieces[i].origin.y,
                 z=i,
-                x=random.randint(0, kitten_image.width*1.4),
-                y=random.randint(0, kitten_image.height*1.4),
-                # scale=scale,
-                scale=1.0,
+                x=random.randint(0, int(kitten_image.width*1.4)),
+                y=random.randint(0, int(kitten_image.height*1.4)),
                 batch=self.batch,
                 group=self.group
             )
@@ -208,13 +242,11 @@ class Main(pyglet.window.Window):
             for (i, img) in enumerate(pyglet_imgs)
         ]
 
-    # @property
-    # def zoom_level(self):
-    #     return self._zoom_level
-    #
-    # @zoom_level.setter
-    # def zoom_level(self, value):
-    #     self._zoom_level = value
+        for kitten in self.kittens:
+            self.quadtree.insert(
+                kitten,
+                kitten.bbox
+            )
 
     def on_resize(self, width, height):
         self.my_projection.change_window_size(
@@ -232,20 +264,11 @@ class Main(pyglet.window.Window):
         self.fps.draw()
 
     def on_mouse_scroll(self, x, y, scroll_x, scroll_y):
-        print(f"{x}, {y}, {scroll_x}, {scroll_y}")
+        # print(f"{x}, {y}, {scroll_x}, {scroll_y}")
         if scroll_y > 0:
             self.my_projection.zoom(1.25, x, y)
         elif scroll_y < 0:
             self.my_projection.zoom(0.8, x, y)
-            # self.zoom_level = 1.2
-            # print(f"zoom level = {self.zoom_level}")
-            # self.view_area = vecrec.Rect(
-            #     left=x / (self.zoom_level * (self.zoom_level - 1)),
-            #     bottom=y / (self.zoom_level * (self.zoom_level - 1)),
-            #     width=self.view_area.width / self.zoom_level,
-            #     height=self.view_area.height / self.zoom_level
-            # )
-            # self.my_projection.set(self.width, self.height, self.view_area)
 
     def on_mouse_press(self, x_, y_, button, modifiers):
         x, y = self.my_projection.view_to_clip_coord(x_, y_)
@@ -255,17 +278,23 @@ class Main(pyglet.window.Window):
                 return True
 
         if button & pyglet.window.mouse.LEFT:
+            t1 = time.time()
             kitten = self._top_kitten_at_location(x, y)
             if kitten:
 
         # for kitten in self._kittens_at_location(x, y):
         #     if button & pyglet.window.mouse.LEFT:
                 self.held_kittens = [kitten]
+                t3 = time.time()
                 for k in self.kittens:
                     if k.z > kitten.z:
                         k.z -= 1
 
                 kitten.z = self.max_kittens - 1
+
+                t2 = time.time()
+                print(f"z-order: {t2 - t3}")
+                print(f"Total: {t2 - t1}")
                 return True
 
         self.selection_box = SelectionBox(x=x, y=y)
@@ -273,10 +302,12 @@ class Main(pyglet.window.Window):
     def on_mouse_release(self, x_, y_, button, modifiers):
         x, y = self.my_projection.view_to_clip_coord(x_, y_)
         if self.held_kittens:
-            if len(self.held_kittens) >= self.max_selection:
-                for kitten in self.held_kittens:
+            for kitten in self.held_kittens:
+                if len(self.held_kittens) >= self.max_selection:
                     kitten.move(x - self.selection_box.origin_x,
                                 y - self.selection_box.origin_y)
+
+                self._move_kitten_in_quadtree(kitten)
 
             self.held_kittens = []
         elif self.selection_box:
@@ -294,9 +325,12 @@ class Main(pyglet.window.Window):
             self.selection_box.move_to(x, y)
 
     def _kittens_at_location(self, x, y):
-        for kitten in self.kittens:
-            if (x, y) in kitten.rect:
+        for kitten in self.quadtree.intersect(bbox=(x, y, x, y)):
+            if kitten.is_pixel_inside_hitbox(x, y):
                 yield kitten
+        # for kitten in self.kittens:
+        #     if (x, y) in kitten.rect:
+        #         yield kitten
 
     def _top_kitten_at_location(self, x, y):
         return max(
@@ -313,6 +347,11 @@ class Main(pyglet.window.Window):
         else:
             return
 
+    def _move_kitten_in_quadtree(self, kitten):
+        self.quadtree.remove(kitten, kitten.old_bbox)
+        kitten.old_bbox = kitten.bbox
+        self.quadtree.insert(kitten, kitten.bbox)
+
 
 if __name__ == '__main__':
     game = Main(
@@ -320,6 +359,6 @@ if __name__ == '__main__':
         height=768,
         resizable=True,
         vsync=False,
-        max_kittens=10000
+        max_kittens=100
     )
     pyglet.app.run()

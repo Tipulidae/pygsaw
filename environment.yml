@@ -10,3 +10,4 @@ dependencies:
   - pip:
     - pyglet==1.5.5
     - glooey==0.3.0
+    - pyqtree==1.0.0
