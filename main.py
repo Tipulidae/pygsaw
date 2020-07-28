@@ -62,6 +62,13 @@ class OrthographicProjection:
         # print(f"{self.clip_port}")
         self.update()
 
+    def pan(self, dx, dy):
+        self.clip_port.displace(
+            int(dx * self.clip_port.width),
+            int(dy * self.clip_port.height)
+        )
+        self.update()
+
     def update(self):
         gl.glViewport(
             self.view_port.left,
@@ -86,16 +93,15 @@ class Kitten(Sprite):
     def __init__(self, *args, mask=None, **kwargs):
         super().__init__(*args, usage='stream', **kwargs)
         self.mask = mask
-        self.selected = False
         self.old_bbox = self.bbox
 
     @property
     def rect(self):
         return vecrec.Rect(
-            left=self.x + self.width/6,
-            bottom=self.y + self.height/6,
-            width=self.width * 2/3,
-            height=self.height * 2/3
+            left=self.x,
+            bottom=self.y,
+            width=self.width,
+            height=self.height
         )
 
     @property
@@ -107,22 +113,13 @@ class Kitten(Sprite):
             self.rect.top
         )
 
-    def select(self):
-        if not self.selected:
-            self.selected = True
-            # self.color = (255, 0, 0)
-
-    def unselect(self):
-        if self.selected:
-            self.selected = False
-            # self.color = (255, 255, 255)
-
     def move(self, dx, dy):
         self.update(x=self.x + dx, y=self.y + dy)
 
     def is_pixel_inside_hitbox(self, x, y):
         if self.mask:
-            return self.mask.getpixel((x - self.x, y - self.y)) == 1
+            return self.mask.getpixel(
+                (x - self.x, self.height - y + self.y)) == 1
         else:
             return True
 
@@ -156,6 +153,7 @@ class Main(pyglet.window.Window):
         self.held_kittens = []
         self.selection_box = None
         self.selection_group = None
+        self.pan_speed = 0.8
         self.max_selection = max_selection
         self.my_projection = OrthographicProjection(
             *self.get_viewport_size(),
@@ -163,59 +161,56 @@ class Main(pyglet.window.Window):
             zoom=1.0
         )
         self.max_kittens = max_kittens
-        self.quadtree = Index(bbox=(-10000, -10000, 10000, 10000))
+        self.quadtree = Index(bbox=(-100000, -100000, 100000, 100000))
         self.add_kittens()
-        # self.view_area = vecrec.Rect(0, 0, *self.get_viewport_size())
-        # self._zoom_level = 1.0
         self.old_width, self.old_height = self.get_viewport_size()
-
-        print(f"{self.get_viewport_size()}")
+        self.keys = pyglet.window.key.KeyStateHandler()
+        self.push_handlers(self.keys)
+        self.is_panning = False
+        print(f"{pyglet.image.get_max_texture_size()}")
 
     def add_kittens(self):
         N = int(sqrt(self.max_kittens))
-        kitten_image = Image.open("pygsaw/resources/hongkong.jpg").convert("RGBA")
+        # scale = 1
+        kitten_image = Image.open("pygsaw/resources/kitten.png").convert("RGBA")
+        # kitten_image = kitten_image.resize(
+        #     (scale * kitten_image.width, scale * kitten_image.height)
+        # )
+
         w = kitten_image.width // N
         h = kitten_image.height // N
+        print(f"{w}, {h}")
 
         pieces = make_jigsaw_cut(w, h, N, N)
-        print(f"{pieces[0].contour.evaluate(10)}")
-
-
-        # temp
-        mask = Image.new("1", (2*w, 2*h), 0)
-        mask_draw = ImageDraw.Draw(mask)
-        mask_draw.ellipse([w//2, h//2, w//2 + w, h//2 + h], fill=1)
-
-        # !temp
 
         def piece_img(pid):
             img = Image.new("RGBA", (2*w, 2*h), (0, 0, 0, 0))
-            # mask = Image.new("1", (2*w, 2*h), 0)
-            # mask_draw = ImageDraw.Draw(mask)
-            # mask_draw.polygon(
-            #     list(map(Point.tuple, pieces[pid].contour.evaluate(10))),
-            #     fill=1,
-            #     outline=1
-            # )
+            mask = Image.new("1", (2*w, 2*h), 0)
+            mask_draw = ImageDraw.Draw(mask)
+            mask_draw.polygon(
+                list(map(Point.tuple, pieces[pid].contour.evaluate(10))),
+                fill=1,
+                outline=1
+            )
 
-            l = w * (pid % N) - w//2
-            t = h * (pid // N) - h//2
+            l = (w * (pid % N) - w//2)
+            t = (h * (pid // N) - h//2)
             img.paste(
                 kitten_image.crop((l, t, l+2*w, t+2*h)),
                 mask=mask
             )
 
-            # img.save(f"foo{pid}.bmp")
-
-            return img
+            return img, mask
 
         imgs = [
-            piece_img(i) for i in tqdm(range(N*N))
+            piece_img(i) for i in tqdm(range(N*N), desc="Cutting pieces")
         ]
 
-        bin = pyglet.image.atlas.TextureBin()
+        bin = pyglet.image.atlas.TextureBin(
+            texture_width=2*kitten_image.width,
+            texture_height=2*kitten_image.height)
         pyglet_imgs = [
-            bin.add(
+            (bin.add(
                 pyglet.image.ImageData(
                     img.width,
                     img.height,
@@ -223,7 +218,7 @@ class Main(pyglet.window.Window):
                     img.tobytes(),
                     -img.width*4
                 )
-            ) for img in imgs
+            ), mask) for img, mask in imgs
         ]
 
         self.kittens = [
@@ -238,8 +233,7 @@ class Main(pyglet.window.Window):
                 batch=self.batch,
                 group=self.group
             )
-            # for i in range(self.max_kittens)
-            for (i, img) in enumerate(pyglet_imgs)
+            for (i, (img, mask)) in enumerate(pyglet_imgs)
         ]
 
         for kitten in self.kittens:
@@ -258,6 +252,18 @@ class Main(pyglet.window.Window):
         self.old_width = width
         self.old_height = height
 
+    def update(self, dt):
+        if self.keys[pyglet.window.key.W]:
+            self.my_projection.pan(0, self.pan_speed * dt)
+        elif self.keys[pyglet.window.key.S]:
+            self.my_projection.pan(0, -self.pan_speed * dt)
+
+        if self.keys[pyglet.window.key.A]:
+            self.my_projection.pan(-self.pan_speed * dt, 0)
+        elif self.keys[pyglet.window.key.D]:
+            self.my_projection.pan(self.pan_speed * dt, 0)
+
+
     def on_draw(self):
         self.clear()
         self.batch.draw()
@@ -270,31 +276,41 @@ class Main(pyglet.window.Window):
         elif scroll_y < 0:
             self.my_projection.zoom(0.8, x, y)
 
+    def on_key_press(self, symbol, modifiers):
+        if not self.is_panning and symbol in [
+                pyglet.window.key.W,
+                pyglet.window.key.A,
+                pyglet.window.key.S,
+                pyglet.window.key.D]:
+            pyglet.clock.schedule_interval(self.update, 1/120)
+            self.is_panning = True
+
+    def on_key_release(self, symbol, modifiers):
+        if self.is_panning and not (
+                self.keys[pyglet.window.key.W] or
+                self.keys[pyglet.window.key.A] or
+                self.keys[pyglet.window.key.S] or
+                self.keys[pyglet.window.key.D]):
+            pyglet.clock.unschedule(self.update)
+            self.is_panning = False
+
+
     def on_mouse_press(self, x_, y_, button, modifiers):
         x, y = self.my_projection.view_to_clip_coord(x_, y_)
-        for kitten in self.held_kittens:
-            if (x, y) in kitten.rect:
-                self.selection_box = SelectionBox(x=x, y=y)
-                return True
+        # for kitten in self.held_kittens:
+        #     if (x, y) in kitten.rect:
+        #         self.selection_box = SelectionBox(x=x, y=y)
+        #         return True
 
         if button & pyglet.window.mouse.LEFT:
-            t1 = time.time()
             kitten = self._top_kitten_at_location(x, y)
             if kitten:
-
-        # for kitten in self._kittens_at_location(x, y):
-        #     if button & pyglet.window.mouse.LEFT:
                 self.held_kittens = [kitten]
-                t3 = time.time()
                 for k in self.kittens:
                     if k.z > kitten.z:
                         k.z -= 1
 
                 kitten.z = self.max_kittens - 1
-
-                t2 = time.time()
-                print(f"z-order: {t2 - t3}")
-                print(f"Total: {t2 - t1}")
                 return True
 
         self.selection_box = SelectionBox(x=x, y=y)
@@ -310,8 +326,8 @@ class Main(pyglet.window.Window):
                 self._move_kitten_in_quadtree(kitten)
 
             self.held_kittens = []
-        elif self.selection_box:
-            self.held_kittens = list(self._kittens_in_selection_box())
+        # elif self.selection_box:
+        #     self.held_kittens = list(self._kittens_in_selection_box())
 
     def on_mouse_drag(self, x_, y_, dx_, dy_, buttons, modifiers):
         x, y = self.my_projection.view_to_clip_coord(x_, y_)
@@ -321,16 +337,13 @@ class Main(pyglet.window.Window):
             for kitten in self.held_kittens:
                 kitten.move(dx, dy)
 
-        if self.selection_box:
-            self.selection_box.move_to(x, y)
+        # if self.selection_box:
+        #     self.selection_box.move_to(x, y)
 
     def _kittens_at_location(self, x, y):
         for kitten in self.quadtree.intersect(bbox=(x, y, x, y)):
             if kitten.is_pixel_inside_hitbox(x, y):
                 yield kitten
-        # for kitten in self.kittens:
-        #     if (x, y) in kitten.rect:
-        #         yield kitten
 
     def _top_kitten_at_location(self, x, y):
         return max(
@@ -359,6 +372,6 @@ if __name__ == '__main__':
         height=768,
         resizable=True,
         vsync=False,
-        max_kittens=100
+        max_kittens=1000
     )
     pyglet.app.run()
