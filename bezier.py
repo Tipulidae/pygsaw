@@ -253,6 +253,8 @@ class Contour:
 class Piece:
     contour: Contour
     origin: Point
+    width: int = 200
+    height: int = 200
 
 
 def make_jigsaw_cut(width, height, nx, ny):
@@ -276,6 +278,7 @@ def make_jigsaw_cut(width, height, nx, ny):
 
     def piece_contour(pid):
         offset = Point(width/2, height/2)
+        # offset = Point(0, 0)
         return Contour(
             outer=[
                 edges[get_epid(pid, "N")].stretch(Point(width, height)).translate(offset),
@@ -289,7 +292,10 @@ def make_jigsaw_cut(width, height, nx, ny):
 
     pieces = {pid: Piece(
         contour=piece_contour(pid),
-        origin=Point(width * (pid % nx), height * (1 - pid // nx))
+        # origin=Point(width * (pid % nx), height * (1 - pid // nx)),
+        origin=Point(width * (pid % nx), height * (pid // nx)),
+        width=width,
+        height=height
     ) for pid in tqdm(range(num_pieces), desc="Designing pieces")}
 
     return pieces
