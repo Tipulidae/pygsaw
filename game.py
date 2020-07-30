@@ -72,7 +72,6 @@ class OrthographicProjection:
             width=round(self.clip_port.width / level_diff),
             height=round(self.clip_port.height / level_diff)
         )
-        # print(f"{self.clip_port}")
         self.update()
 
     def pan(self, dx, dy):
@@ -377,10 +376,10 @@ class Game(pyglet.window.Window):
 
     def on_mouse_press(self, x_, y_, button, modifiers):
         x, y = self.my_projection.view_to_clip_coord(x_, y_)
-        # for kitten in self.held_kittens:
-        #     if (x, y) in kitten.rect:
-        #         self.selection_box = SelectionBox(x=x, y=y)
-        #         return True
+        for piece in self.held_pieces:
+            if (x, y) in piece.rect:
+                self.selection_box = SelectionBox(x=x, y=y)
+                return True
 
         if button & pyglet.window.mouse.LEFT:
             piece = self._top_piece_at_location(x, y)
@@ -398,31 +397,39 @@ class Game(pyglet.window.Window):
 
     def on_mouse_release(self, x, y, button, modifiers):
         if self.held_pieces:
+            t0 = time.time()
             for piece in self.held_pieces:
                 piece.group = self.group
+            t1 = time.time()
+            for piece in self.held_pieces:
                 piece.move(self.selection_group.x, self.selection_group.y)
+            t2 = time.time()
+            for piece in self.held_pieces:
                 self._move_piece_in_quadtree(piece)
-                self.selection_group.x = 0
-                self.selection_group.y = 0
-
+            t3 = time.time()
+            print(f"{t1-t0}, {t2-t1}, {t3-t2}")
+            self.selection_group.x = 0
+            self.selection_group.y = 0
             self.held_pieces = []
-        # elif self.selection_box:
-        #     self.held_kittens = list(self._kittens_in_selection_box())
+        elif self.selection_box:
+            self.held_pieces = list(self._pieces_in_selection_box())
+            for piece in self.held_pieces:
+                piece.group = self.selection_group
 
     def on_mouse_drag(self, x_, y_, dx_, dy_, buttons, modifiers):
+        x, y = self.my_projection.view_to_clip_coord(x_, y_)
+
         if self.held_pieces:
-            x, y = self.my_projection.view_to_clip_coord(x_, y_)
             dx = dx_ / self.my_projection.zoom_level
             dy = dy_ / self.my_projection.zoom_level
             self.selection_group.x += dx
             self.selection_group.y += dy
 
-        # if self.selection_box:
-        #     self.selection_box.move_to(x, y)
+        if self.selection_box:
+            self.selection_box.move_to(x, y)
 
     def _pieces_at_location(self, x, y):
         for piece in self.quadtree.intersect(bbox=(x, y, x, y)):
-            # if kitten.is_pixel_inside_hitbox(x, y):
             if piece.hitbox(x, y):
                 yield piece
 
@@ -454,6 +461,6 @@ if __name__ == '__main__':
         resizable=True,
         vsync=False,
         pic='hongkong.jpg',
-        max_pieces=100
+        max_pieces=2000
     )
     pyglet.app.run()

@@ -304,6 +304,8 @@ def is_left(p0: Point, p1: Point, p2: Point) -> float:
     return (p1.x - p0.x) * (p2.y - p0.y) - (p2.x - p0.x) * (p1.y - p0.y)
 
 
+# This is the winding algorithm, adapted from
+# http://geomalgorithms.com/a03-_inclusion.html
 def point_in_polygon(p, polygon):
     n = len(polygon) - 1
     winding_number = 0
