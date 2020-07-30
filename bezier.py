@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from enum import Enum
-from typing import List, Tuple
+from typing import List
 import itertools
 import random
 
@@ -33,7 +33,7 @@ class Bezier:
 
     def evaluate(self, n=10):
         return [
-            self.at(t/(n-1)) for t in range(n)
+            self.at(t/n) for t in range(n)
         ]
 
     def at(self, t: float):
@@ -71,12 +71,12 @@ class Bezier:
     def reverse(self):
         return Bezier(self.p4, self.p3, self.p2, self.p1)
 
-    def stretch(self, p):
+    def stretch(self, x, y):
         return Bezier(
-            Point(p.x * self.p1.x / 200, p.y * self.p1.y / 200),
-            Point(p.x * self.p2.x / 200, p.y * self.p2.y / 200),
-            Point(p.x * self.p3.x / 200, p.y * self.p3.y / 200),
-            Point(p.x * self.p4.x / 200, p.y * self.p4.y / 200)
+            Point(x * self.p1.x / 200, y * self.p1.y / 200),
+            Point(x * self.p2.x / 200, y * self.p2.y / 200),
+            Point(x * self.p3.x / 200, y * self.p3.y / 200),
+            Point(x * self.p4.x / 200, y * self.p4.y / 200)
         )
 
     def flip(self, y):
@@ -99,7 +99,7 @@ class Edge:
     def translate(self, p: Point):
         pass
 
-    def stretch(self, p: Point):
+    def stretch(self, x, y):
         pass
 
     def reverse(self):
@@ -115,7 +115,8 @@ class FlatEdge(Edge):
     p2: Point
 
     def evaluate(self, n=10):
-        return [self.p1, self.p2]
+        return [self.p1]
+        # return [self.p1, self.p2]
 
     def reverse(self):
         return FlatEdge(self.p2, self.p1)
@@ -132,10 +133,10 @@ class FlatEdge(Edge):
             self.p2 + p
         )
 
-    def stretch(self, p):
+    def stretch(self, x, y):
         return FlatEdge(
-            Point(p.x * self.p1.x / 200, p.y * self.p1.y / 200),
-            Point(p.x * self.p2.x / 200, p.y * self.p2.y / 200)
+            Point(x * self.p1.x / 200, y * self.p1.y / 200),
+            Point(x * self.p2.x / 200, y * self.p2.y / 200)
         )
 
     def flip(self, y):
@@ -185,12 +186,12 @@ class CurvedEdge(Edge):
             self.b4.translate(p)
         )
 
-    def stretch(self, p):
+    def stretch(self, x, y):
         return CurvedEdge(
-            self.b1.stretch(p),
-            self.b2.stretch(p),
-            self.b3.stretch(p),
-            self.b4.stretch(p)
+            self.b1.stretch(x, y),
+            self.b2.stretch(x, y),
+            self.b3.stretch(x, y),
+            self.b4.stretch(x, y)
         )
 
     def flip(self, y):
@@ -206,9 +207,9 @@ class CurvedEdge(Edge):
     def from_minimal(cls, pts):
         return cls(
             Bezier(Point(0, 0), pts[0], pts[1], pts[2]),
-            Bezier(pts[2], Point(2*pts[2].x - pts[1].x, 2*pts[2].y - pts[1].y), pts[3], pts[4]),
-            Bezier(pts[4], Point(2*pts[4].x - pts[3].x, 2*pts[4].y - pts[3].y), pts[5], pts[6]),
-            Bezier(pts[6], Point(2*pts[6].x - pts[5].x, 2*pts[6].y - pts[5].y), pts[7], Point(200, 0))
+            Bezier(pts[2], Point(2 * pts[2].x - pts[1].x, 2 * pts[2].y - pts[1].y), pts[3], pts[4]),
+            Bezier(pts[4], Point(2 * pts[4].x - pts[3].x, 2 * pts[4].y - pts[3].y), pts[5], pts[6]),
+            Bezier(pts[6], Point(2 * pts[6].x - pts[5].x, 2 * pts[6].y - pts[5].y), pts[7], Point(200, 0))
         )
 
     @classmethod
@@ -278,14 +279,12 @@ def make_jigsaw_cut(width, height, nx, ny):
 
     def piece_contour(pid):
         offset = Point(width/2, height/2)
-        # offset = Point(0, 0)
         return Contour(
             outer=[
-                edges[get_epid(pid, "N")].stretch(Point(width, height)).translate(offset),
-                edges[get_epid(pid, "E")].stretch(Point(height, width)).rotate().translate(offset + Point(width, 0)),
-                edges[get_epid(pid, "S")].stretch(Point(width, height)).translate(offset + Point(0, height)).reverse(),
-                edges[get_epid(pid, "W")].stretch(Point(height, width)).rotate().translate(offset).reverse()
-
+                edges[get_epid(pid, "N")].stretch(width, height).translate(offset),
+                edges[get_epid(pid, "E")].stretch(height, width).rotate().translate(offset + Point(width, 0)),
+                edges[get_epid(pid, "S")].stretch(width, height).translate(offset + Point(0, height)).reverse(),
+                edges[get_epid(pid, "W")].stretch(height, width).rotate().translate(offset).reverse()
             ],
             inner=[]
         )
@@ -299,3 +298,22 @@ def make_jigsaw_cut(width, height, nx, ny):
     ) for pid in tqdm(range(num_pieces), desc="Designing pieces")}
 
     return pieces
+
+
+def is_left(p0: Point, p1: Point, p2: Point) -> float:
+    return (p1.x - p0.x) * (p2.y - p0.y) - (p2.x - p0.x) * (p1.y - p0.y)
+
+
+def point_in_polygon(p, polygon):
+    n = len(polygon) - 1
+    winding_number = 0
+    for i in range(n):
+        if polygon[i].y <= p.y:
+            if polygon[i + 1].y > p.y:
+                if is_left(polygon[i], polygon[i + 1], p) > 0:
+                    winding_number += 1
+        elif polygon[i + 1].y <= p.y:
+            if is_left(polygon[i], polygon[i + 1], p) < 0:
+                winding_number -= 1
+
+    return winding_number != 0

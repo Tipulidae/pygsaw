@@ -1,17 +1,15 @@
-from math import sqrt
+import math
 import time
 import random
 
 import pyglet
 import pyglet.gl as gl
 import vecrec
-from PIL import Image, ImageDraw
 from tqdm import tqdm
 from pyqtree import Index
 
-
-from bezier import Point, make_jigsaw_cut
-from sprite import Sprite, SpriteGroup
+from bezier import Point, make_jigsaw_cut, point_in_polygon
+from sprite import SpriteGroup
 import earcut
 
 pyglet.resource.path = ['resources']
@@ -136,7 +134,9 @@ class Piece:
         )
         self.vertex_list = None
         self.original_vertices = None
-        self.x, self.y, self.z = 0, 0, 0
+        self.polygon = None
+        self._x, self._y, self._z = 0, 0, 0
+        self._bbox = None
         self.setup()
         self.set_position(x, y, z)
         self.old_bbox = self.bbox
@@ -144,10 +144,10 @@ class Piece:
     @property
     def rect(self):
         return vecrec.Rect(
-            left=self.x,
-            bottom=self.y,
-            width=2*self.piece_model.width,
-            height=2*self.piece_model.height
+            left=self._x + self._bbox.left,
+            bottom=self._y + self._bbox.bottom,
+            width=self._bbox.width,
+            height=self._bbox.height
         )
 
     @property
@@ -179,46 +179,95 @@ class Piece:
             self.batch)
 
     def setup(self):
-        vertices = list(map(
-            Point.tuple, self.piece_model.contour.evaluate(10)))
-        data = earcut.flatten([vertices, []])
-        indices = earcut.earcut(data['vertices'])
-        self.original_vertices = tuple(data['vertices'])
+        self.polygon = self.piece_model.contour.evaluate(10)
 
-        sx, sy = self.texture.tex_coords[6], self.texture.tex_coords[7]
-        tex_coords = earcut.flatten(
-            [[(sx * (x + self.piece_model.origin.x - self.piece_model.width // 2) / self.texture.width,
-               sy * (y + self.piece_model.origin.y - self.piece_model.height // 2) / self.texture.height)
-              for x, y in vertices], []]
-        )
+        sx = self.texture.tex_coords[6] / self.texture.width
+        sy = self.texture.tex_coords[7] / self.texture.height
+        offset_x = self.piece_model.origin.x - self.piece_model.width // 2
+        offset_y = self.piece_model.origin.y - self.piece_model.height // 2
+
+        self.original_vertices = []
+        earcut_input = []
+        tex_coords = []
+        for p in self.polygon:
+            self.original_vertices.append(p.x)
+            self.original_vertices.append(p.y)
+            self.original_vertices.append(self.z)
+
+            earcut_input.append(p.x)
+            earcut_input.append(p.y)
+
+            tex_coords.append(sx * (p.x + offset_x))
+            tex_coords.append(sy * (p.y + offset_y))
+            tex_coords.append(0)
+
+        indices = earcut.earcut(earcut_input)
+
         self.vertex_list = self.batch.add_indexed(
-            len(data['vertices']) // 2,
+            len(self.original_vertices) // 3,
             pyglet.gl.GL_TRIANGLES,
             self.group,
             indices,
-            ('v2f', tuple(data['vertices'])),
-            ('t2f', tuple(tex_coords['vertices']))
+            ('v3f', tuple(self.original_vertices)),
+            ('t3f', tuple(tex_coords))
+        )
+
+        self.polygon.append(self.polygon[0])
+        self._make_bbox()
+
+    def _make_bbox(self):
+        left = bottom = math.inf
+        right = top = -math.inf
+        for p in self.polygon:
+            if p.x < left:
+                left = p.x
+            elif p.x > right:
+                right = p.x
+            if p.y < bottom:
+                bottom = p.y
+            elif p.y > top:
+                top = p.y
+
+        self._bbox = vecrec.Rect(
+            left=left,
+            bottom=bottom,
+            width=right - left,
+            height=top - bottom
         )
 
     def set_position(self, x, y, z):
-        self.x, self.y, self.z = x, y, z
+        self._x, self._y, self._z = x, y, z
         new_vertex_list = []
         for i, v in enumerate(self.original_vertices):
-            if i % 2:
-                new_vertex_list.append(v+y)
-            else:
+            k = i % 3
+            if k == 0:
                 new_vertex_list.append(v+x)
+            elif k == 1:
+                new_vertex_list.append(v+y)
+            elif k == 2:
+                new_vertex_list.append(v+z)
 
         self.vertex_list.vertices[:] = tuple(new_vertex_list)
 
     def move(self, dx, dy, dz=0):
-        self.set_position(self.x + dx, self.y + dy, self.z + dz)
+        self.set_position(self._x + dx, self._y + dy, self._z + dz)
+
+    @property
+    def z(self):
+        return self._z
+
+    @z.setter
+    def z(self, z):
+        self.set_position(self._x, self._y, z)
+
+    def hitbox(self, x, y):
+        return point_in_polygon(Point(x - self._x, y - self._y), self.polygon)
 
 
-class Main(pyglet.window.Window):
+class Game(pyglet.window.Window):
     def __init__(
             self,
-            max_kittens=100,
+            max_pieces=100,
             pic='kitten.png',
             **kwargs):
         super().__init__(**kwargs)
@@ -232,10 +281,10 @@ class Main(pyglet.window.Window):
         self.pan_speed = 0.8
         self.my_projection = OrthographicProjection(
             *self.get_viewport_size(),
-            z_span=max_kittens,
+            z_span=max_pieces,
             zoom=1.0
         )
-        self.max_kittens = max_kittens
+        self.max_pieces = max_pieces
         self.pic = pic
         self.quadtree = Index(bbox=(-100000, -100000, 100000, 100000))
         self.add_pieces()
@@ -245,7 +294,7 @@ class Main(pyglet.window.Window):
         self.is_panning = False
 
     def add_pieces(self):
-        N = int(sqrt(self.max_kittens))
+        N = int(math.sqrt(self.max_pieces))
         kitten_image = pyglet.resource.image(self.pic)
         texture = kitten_image.get_texture()
         w = kitten_image.width // N
@@ -263,7 +312,7 @@ class Main(pyglet.window.Window):
                 self.group,
                 # x=pieces[i].origin.x,
                 # y=pieces[i].origin.y,
-                # z=i,
+                z=i,
                 x=random.randint(0, int(kitten_image.width * 1.4)),
                 y=random.randint(0, int(kitten_image.height * 1.4))
             )
@@ -334,25 +383,25 @@ class Main(pyglet.window.Window):
         #         return True
 
         if button & pyglet.window.mouse.LEFT:
-            kitten = self._top_kitten_at_location(x, y)
-            if kitten:
-                self.held_pieces = [kitten]
-                kitten.group = self.selection_group
+            piece = self._top_piece_at_location(x, y)
+            if piece:
+                self.held_pieces = [piece]
+                piece.group = self.selection_group
                 for k in self.pieces:
-                    if k.z > kitten.z:
+                    if k.z > piece.z:
                         k.z -= 1
 
-                kitten.z = self.max_kittens - 1
+                piece.z = self.max_pieces - 1
                 return True
 
         self.selection_box = SelectionBox(x=x, y=y)
 
     def on_mouse_release(self, x, y, button, modifiers):
         if self.held_pieces:
-            for kitten in self.held_pieces:
-                kitten.group = self.group
-                kitten.move(self.selection_group.x, self.selection_group.y)
-                self._move_kitten_in_quadtree(kitten)
+            for piece in self.held_pieces:
+                piece.group = self.group
+                piece.move(self.selection_group.x, self.selection_group.y)
+                self._move_piece_in_quadtree(piece)
                 self.selection_group.x = 0
                 self.selection_group.y = 0
 
@@ -371,39 +420,40 @@ class Main(pyglet.window.Window):
         # if self.selection_box:
         #     self.selection_box.move_to(x, y)
 
-    def _kittens_at_location(self, x, y):
-        for kitten in self.quadtree.intersect(bbox=(x, y, x, y)):
+    def _pieces_at_location(self, x, y):
+        for piece in self.quadtree.intersect(bbox=(x, y, x, y)):
             # if kitten.is_pixel_inside_hitbox(x, y):
-                yield kitten
+            if piece.hitbox(x, y):
+                yield piece
 
-    def _top_kitten_at_location(self, x, y):
+    def _top_piece_at_location(self, x, y):
         return max(
-            self._kittens_at_location(x, y),
+            self._pieces_at_location(x, y),
             key=(lambda k: k.z),
             default=None
         )
 
-    def _kittens_in_selection_box(self):
+    def _pieces_in_selection_box(self):
         if self.selection_box:
-            for kitten in self.pieces:
-                if self.selection_box.touching(kitten.rect):
-                    yield kitten
+            for piece in self.pieces:
+                if self.selection_box.touching(piece.rect):
+                    yield piece
         else:
             return
 
-    def _move_kitten_in_quadtree(self, kitten):
-        self.quadtree.remove(kitten, kitten.old_bbox)
-        kitten.old_bbox = kitten.bbox
-        self.quadtree.insert(kitten, kitten.bbox)
+    def _move_piece_in_quadtree(self, piece):
+        self.quadtree.remove(piece, piece.old_bbox)
+        piece.old_bbox = piece.bbox
+        self.quadtree.insert(piece, piece.bbox)
 
 
 if __name__ == '__main__':
-    game = Main(
-        width=1024,
-        height=768,
+    game = Game(
+        width=1500,
+        height=1100,
         resizable=True,
         vsync=False,
         pic='hongkong.jpg',
-        max_kittens=100
+        max_pieces=100
     )
     pyglet.app.run()
