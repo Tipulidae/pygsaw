@@ -1,9 +1,11 @@
+import itertools
+import random
+import math
 from dataclasses import dataclass
 from enum import Enum
 from typing import List
-import itertools
-import random
 
+import vecrec
 from tqdm import tqdm
 
 
@@ -15,8 +17,17 @@ class Point:
     def tuple(self):
         return self.x, self.y
 
+    @staticmethod
+    def dist(p1, p2):
+        return math.sqrt(
+            (p2.x - p1.x) ** 2 + (p2.y - p1.y) ** 2
+        )
+
     def __add__(self, other):
         return Point(self.x + other.x, self.y + other.y)
+
+    def __sub__(self, other):
+        return Point(self.x - other.x, self.y - other.y)
 
 
 class Direction(Enum):
@@ -278,7 +289,11 @@ def make_jigsaw_cut(width, height, nx, ny):
         return -1
 
     def piece_contour(pid):
-        offset = Point(width/2, height/2)
+        # offset = Point(width/2, height/2)
+        offset = Point(
+            width * (pid % nx) + width / 2,
+            height * (pid // nx) + height / 2
+        )
         return Contour(
             outer=[
                 edges[get_epid(pid, "N")].stretch(width, height).translate(offset),
@@ -319,3 +334,24 @@ def point_in_polygon(p, polygon):
                 winding_number -= 1
 
     return winding_number != 0
+
+
+def bounding_box(polygon):
+    left = bottom = math.inf
+    right = top = -math.inf
+    for p in polygon:
+        if p.x < left:
+            left = p.x
+        elif p.x > right:
+            right = p.x
+        if p.y < bottom:
+            bottom = p.y
+        elif p.y > top:
+            top = p.y
+
+    return vecrec.Rect(
+        left=left,
+        bottom=bottom,
+        width=right - left,
+        height=top - bottom
+    )

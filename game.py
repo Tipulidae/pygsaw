@@ -8,7 +8,7 @@ import vecrec
 from tqdm import tqdm
 from pyqtree import Index
 
-from bezier import Point, make_jigsaw_cut, point_in_polygon
+from bezier import Point, make_jigsaw_cut, point_in_polygon, bounding_box
 from sprite import SpriteGroup
 import earcut
 
@@ -120,9 +120,20 @@ class SelectionBox:
 
 
 class Piece:
-    def __init__(self, pid, model, texture, batch, group, x=0, y=0, z=0):
+    def __init__(
+            self,
+            pid,
+            model,
+            texture,
+            batch,
+            group,
+            x=0,
+            y=0,
+            z=0,
+            nx=0,
+            ny=0):
         self.pid = pid
-        self.piece_model = model
+        self.model = model
         self.texture = texture
         self.batch = batch
         self._group = SpriteGroup(
@@ -133,12 +144,28 @@ class Piece:
         )
         self.vertex_list = None
         self.original_vertices = None
+        self.indices = None
         self.polygon = None
         self._x, self._y, self._z = 0, 0, 0
         self._bbox = None
         self.setup()
         self.set_position(x, y, z)
         self.old_bbox = self.bbox
+        self.size = 1
+
+        n = nx * ny
+
+        def real_neighbour(p):
+            return (
+                (in_range := 0 <= p < n) and
+                ((same_row := pid // nx == p // nx) or
+                 (same_column := pid % nx == p % nx))
+            )
+
+        self.neighbours = set(filter(
+            real_neighbour,
+            [pid - nx, pid - 1, pid + 1, pid + nx]
+        ))
 
     @property
     def rect(self):
@@ -177,13 +204,21 @@ class Piece:
             self._group,
             self.batch)
 
+    @property
+    def position(self):
+        return Point(self._x, self._y)
+
     def setup(self):
-        self.polygon = self.piece_model.contour.evaluate(10)
+        self.polygon = self.model.contour.evaluate(10)
 
         sx = self.texture.tex_coords[6] / self.texture.width
         sy = self.texture.tex_coords[7] / self.texture.height
-        offset_x = self.piece_model.origin.x - self.piece_model.width // 2
-        offset_y = self.piece_model.origin.y - self.piece_model.height // 2
+        offset_x = 0
+        offset_y = 0
+        offset_x = -self.model.width // 2
+        offset_y = -self.model.height // 2
+        # offset_x = self.model.origin.x - self.model.width // 2
+        # offset_y = self.model.origin.y - self.model.height // 2
 
         self.original_vertices = []
         earcut_input = []
@@ -200,39 +235,19 @@ class Piece:
             tex_coords.append(sy * (p.y + offset_y))
             tex_coords.append(0)
 
-        indices = earcut.earcut(earcut_input)
+        self.indices = earcut.earcut(earcut_input)
 
         self.vertex_list = self.batch.add_indexed(
             len(self.original_vertices) // 3,
             pyglet.gl.GL_TRIANGLES,
             self.group,
-            indices,
+            self.indices,
             ('v3f', tuple(self.original_vertices)),
             ('t3f', tuple(tex_coords))
         )
 
         self.polygon.append(self.polygon[0])
-        self._make_bbox()
-
-    def _make_bbox(self):
-        left = bottom = math.inf
-        right = top = -math.inf
-        for p in self.polygon:
-            if p.x < left:
-                left = p.x
-            elif p.x > right:
-                right = p.x
-            if p.y < bottom:
-                bottom = p.y
-            elif p.y > top:
-                top = p.y
-
-        self._bbox = vecrec.Rect(
-            left=left,
-            bottom=bottom,
-            width=right - left,
-            height=top - bottom
-        )
+        self._bbox = bounding_box(self.polygon)
 
     def set_position(self, x, y, z):
         self._x, self._y, self._z = x, y, z
@@ -260,21 +275,83 @@ class Piece:
         self.set_position(self._x, self._y, z)
 
     def hitbox(self, x, y):
-        return point_in_polygon(Point(x - self._x, y - self._y), self.polygon)
+        return point_in_polygon(
+            Point(x - self._x, y - self._y),
+            self.polygon)
+
+    def merge(self, other):
+        # print(f"Merging {other.pid} into {self.pid}")
+        self.size += other.size
+        self.neighbours = self.neighbours.union(other.neighbours)
+        self.neighbours.remove(self.pid)
+        self.neighbours.remove(other.pid)
+        offset = len(self.original_vertices) // 3
+        self.original_vertices += other.original_vertices
+        self.indices += [i + offset for i in other.indices]
+        tex_coords = list(self.vertex_list.tex_coords)
+        tex_coords += list(other.vertex_list.tex_coords)
+
+        self.vertex_list.delete()
+        # other.vertex_list.delete()
+
+        self.vertex_list = self.batch.add_indexed(
+            len(self.original_vertices) // 3,
+            pyglet.gl.GL_TRIANGLES,
+            self.group,
+            self.indices,
+            ('v3f', tuple(self.original_vertices)),
+            ('t3f', tuple(tex_coords))
+        )
+        self.move(0, 0, 0)
+
+        # combine the vertex_list!
+        # Deal with the polygon-merging / hit detection
+
+    def __lt__(self, other):
+        if isinstance(other, Piece):
+            return self.size < other.size
+        else:
+            raise TypeError
+
+    def __le__(self, other):
+        if isinstance(other, Piece):
+            return self.size <= other.size
+        else:
+            raise TypeError
+
+    def __gt__(self, other):
+        if isinstance(other, Piece):
+            return self.size > other.size
+        else:
+            raise TypeError
+
+    def __ge__(self, other):
+        if isinstance(other, Piece):
+            return self.size >= other.size
+        else:
+            raise TypeError
+
+    def __del__(self):
+        # print(f"Deleting {self.pid}")
+        self.vertex_list.delete()
 
 
 class Game(pyglet.window.Window):
     def __init__(
             self,
             max_pieces=100,
+            num_groups=100,
             pic='kitten.png',
             **kwargs):
         super().__init__(**kwargs)
         self.batch = pyglet.graphics.Batch()
         self.group = pyglet.graphics.Group()
+
+        self.num_groups = num_groups
+
         self.selection_group = TranslationGroup(0, 0)
         self.fps = pyglet.window.FPSDisplay(window=self)
-        self.pieces = []
+        self.pieces = dict()
         self.held_pieces = []
         self.selection_box = None
         self.pan_speed = 0.8
@@ -302,23 +379,26 @@ class Game(pyglet.window.Window):
 
         pieces = make_jigsaw_cut(w, h, N, N)
 
-        self.pieces = [
-            Piece(
-                i,
+        self.pieces = {
+            pid: Piece(
+                pid,
                 piece,
                 texture,
                 self.batch,
                 self.group,
+                # self.groups[i % self.num_groups],
                 # x=pieces[i].origin.x,
                 # y=pieces[i].origin.y,
-                z=i,
-                x=random.randint(0, int(kitten_image.width * 1.4)),
-                y=random.randint(0, int(kitten_image.height * 1.4))
+                z=pid,
+                x=random.randint(0, int(kitten_image.width * 1.4)) - pieces[pid].origin.x,
+                y=random.randint(0, int(kitten_image.height * 1.4)) - pieces[pid].origin.y,
+                nx=N,
+                ny=N
             )
-            for i, piece in tqdm(pieces.items(), desc="Creating pieces")
-        ]
+            for pid, piece in tqdm(pieces.items(), desc="Creating pieces")
+        }
 
-        for kitten in tqdm(self.pieces, desc="Building quad-tree"):
+        for kitten in tqdm(self.pieces.values(), desc="Building quad-tree"):
             self.quadtree.insert(
                 kitten,
                 kitten.bbox
@@ -364,6 +444,10 @@ class Game(pyglet.window.Window):
                 pyglet.window.key.D]:
             pyglet.clock.schedule_interval(self.update, 1/120)
             self.is_panning = True
+        if symbol == pyglet.window.key.C:
+            self._merge_random_pieces()
+        if symbol == pyglet.window.key.X:
+            self._merge_several_random_pieces(50)
 
     def on_key_release(self, symbol, modifiers):
         if self.is_panning and not (
@@ -384,11 +468,13 @@ class Game(pyglet.window.Window):
         if button & pyglet.window.mouse.LEFT:
             piece = self._top_piece_at_location(x, y)
             if piece:
+                # print(f"{piece.pid} neighbours: {piece.neighbours}")
                 self.held_pieces = [piece]
                 piece.group = self.selection_group
-                for k in self.pieces:
-                    if k.z > piece.z:
-                        k.z -= 1
+                # self.selection_group = piece.group.parent
+                for p in self.pieces.values():
+                    if p.z > piece.z:
+                        p.z -= 1
 
                 piece.z = self.max_pieces - 1
                 return True
@@ -397,17 +483,19 @@ class Game(pyglet.window.Window):
 
     def on_mouse_release(self, x, y, button, modifiers):
         if self.held_pieces:
-            t0 = time.time()
+
             for piece in self.held_pieces:
+                t0 = time.time()
                 piece.group = self.group
-            t1 = time.time()
-            for piece in self.held_pieces:
+                t1 = time.time()
                 piece.move(self.selection_group.x, self.selection_group.y)
-            t2 = time.time()
-            for piece in self.held_pieces:
+                t2 = time.time()
                 self._move_piece_in_quadtree(piece)
-            t3 = time.time()
-            print(f"{t1-t0}, {t2-t1}, {t3-t2}")
+                t3 = time.time()
+                self._snap_to_neighbour(piece)
+                t4 = time.time()
+                print(f"change group: {t1 - t0}, move: {t2-t1}, quad: {t3-t2}, snap: {t4-t3}")
+
             self.selection_group.x = 0
             self.selection_group.y = 0
             self.held_pieces = []
@@ -442,7 +530,7 @@ class Game(pyglet.window.Window):
 
     def _pieces_in_selection_box(self):
         if self.selection_box:
-            for piece in self.pieces:
+            for piece in self.pieces.values():
                 if self.selection_box.touching(piece.rect):
                     yield piece
         else:
@@ -453,6 +541,54 @@ class Game(pyglet.window.Window):
         piece.old_bbox = piece.bbox
         self.quadtree.insert(piece, piece.bbox)
 
+    def _snap_to_neighbour(self, piece):
+        for neighbour_pid in piece.neighbours:
+            neighbour = self.pieces[neighbour_pid]
+            dist = Point.dist(
+                piece.position,
+                neighbour.position
+            )
+            if dist < 100:
+                foo = neighbour.position - piece.position
+                piece.move(foo.x, foo.y)
+                self._move_piece_in_quadtree(piece)
+                self._merge_pieces(piece, neighbour)
+
+                # smaller pieces move to larger ones, if tied, move the one
+                # not held
+                # Comparison based on number of how many pieces are contained
+                # if piece >= neighbour:
+                #     self._merge_pieces(piece, neighbour)
+                # else:
+                #     self._merge_pieces(neighbour, piece)
+
+                return
+
+    def _merge_pieces(self, p1, p2):
+        t0 = time.time()
+        p1.merge(p2)
+        self.pieces.pop(p2.pid)
+        p2.neighbours.remove(p1.pid)
+        for neighbour_pid in p2.neighbours:
+            neighbour = self.pieces[neighbour_pid]
+            neighbour.neighbours.remove(p2.pid)
+            neighbour.neighbours.add(p1.pid)
+
+        self.quadtree.remove(p2, p2.bbox)
+        del p2
+        t1 = time.time()
+        print(f"{t1-t0}, {p1.size}")
+
+    def _merge_several_random_pieces(self, n):
+        n = min(n, len(self.pieces) - 1)
+        for _ in range(n):
+            self._merge_random_pieces()
+
+    def _merge_random_pieces(self):
+        piece = random.choice(list(self.pieces.values()))
+        neighbour = self.pieces[random.choice(list(piece.neighbours))]
+        self._merge_pieces(piece, neighbour)
+
 
 if __name__ == '__main__':
     game = Game(
@@ -461,6 +597,7 @@ if __name__ == '__main__':
         resizable=True,
         vsync=False,
         pic='hongkong.jpg',
-        max_pieces=2000
+        max_pieces=100,
+        num_groups=50
     )
     pyglet.app.run()
