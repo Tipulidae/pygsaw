@@ -3,10 +3,8 @@ import random
 import math
 from dataclasses import dataclass
 from enum import Enum
-from typing import List
 
 import vecrec
-from tqdm import tqdm
 
 
 @dataclass
@@ -249,74 +247,10 @@ class CurvedEdge(Edge):
         return cls.from_minimal(random_points)
 
 
-@dataclass
-class Contour:
-    outer: List[Edge]
-    inner: List[Edge]
-
-    def evaluate(self, n=10):
-        return list(itertools.chain.from_iterable([
-            edge.evaluate(n)
-            for edge in self.outer
-        ]))
-
-
-@dataclass
-class Piece:
-    contour: Contour
-    origin: Point
-    width: int = 200
-    height: int = 200
-
-
-def make_jigsaw_cut(width, height, nx, ny):
-    num_edges = 2 * nx * ny - nx - ny
-    num_pieces = nx * ny
-    nv = (nx - 1) * ny
-
+def make_random_edges(num_edges):
     edges = {i: CurvedEdge.random() for i in range(num_edges)}
     edges[-1] = FlatEdge(Point(0, 0), Point(200, 0))
-
-    def get_epid(pid, orientation):
-        if orientation == "N" and pid >= nx:
-            return pid - nx + nv
-        elif orientation == "W" and pid % nx:
-            return pid - (pid // nx) - 1
-        elif orientation == "S" and pid < num_pieces - nx:
-            return pid + nv
-        elif orientation == "E" and pid % nx != nx - 1:
-            return pid - (pid // nx)
-        return -1
-
-    def piece_contour(pid):
-        # offset = Point(width/2, height/2)
-        offset = Point(
-            width * (pid % nx) + width / 2,
-            height * (pid // nx) + height / 2
-        )
-        return Contour(
-            outer=[
-                edges[get_epid(pid, "N")].stretch(width, height).translate(offset),
-                edges[get_epid(pid, "E")].stretch(height, width).rotate().translate(offset + Point(width, 0)),
-                edges[get_epid(pid, "S")].stretch(width, height).translate(offset + Point(0, height)).reverse(),
-                edges[get_epid(pid, "W")].stretch(height, width).rotate().translate(offset).reverse()
-            ],
-            inner=[]
-        )
-
-    pieces = {pid: Piece(
-        contour=piece_contour(pid),
-        # origin=Point(width * (pid % nx), height * (1 - pid // nx)),
-        origin=Point(width * (pid % nx), height * (pid // nx)),
-        width=width,
-        height=height
-    ) for pid in tqdm(range(num_pieces), desc="Designing pieces")}
-
-    return pieces
-
-
-def is_left(p0: Point, p1: Point, p2: Point) -> float:
-    return (p1.x - p0.x) * (p2.y - p0.y) - (p2.x - p0.x) * (p1.y - p0.y)
+    return edges
 
 
 # This is the winding algorithm, adapted from
@@ -327,13 +261,17 @@ def point_in_polygon(p, polygon):
     for i in range(n):
         if polygon[i].y <= p.y:
             if polygon[i + 1].y > p.y:
-                if is_left(polygon[i], polygon[i + 1], p) > 0:
+                if _is_left(polygon[i], polygon[i + 1], p) > 0:
                     winding_number += 1
         elif polygon[i + 1].y <= p.y:
-            if is_left(polygon[i], polygon[i + 1], p) < 0:
+            if _is_left(polygon[i], polygon[i + 1], p) < 0:
                 winding_number -= 1
 
     return winding_number != 0
+
+
+def _is_left(p0: Point, p1: Point, p2: Point) -> float:
+    return (p1.x - p0.x) * (p2.y - p0.y) - (p2.x - p0.x) * (p1.y - p0.y)
 
 
 def bounding_box(polygon):
