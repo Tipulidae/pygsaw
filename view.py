@@ -361,17 +361,19 @@ class Piece:
         elif self.is_big and not other.is_big:
             merge_vertices()
             other.set_position(0, 0, 0)
-            tg = min(self.translation_groups, key=(lambda g: g.size))
+            tg = max(self.translation_groups, key=(lambda g: g.size))
             tg.size += other.size
             other.group = tg
         elif not self.is_big and other.is_big:
             self.set_position(0, 0, 0)
             self.translation_groups = other.translation_groups
-            tg = min(self.translation_groups, key=(lambda g: g.size))
+            tg = max(self.translation_groups, key=(lambda g: g.size))
             tg.size += self.size
             self.group = tg
             # OBS!! Very important to do this AFTER changing group, for
-            # performance reasons!
+            # performance reasons! Otherwise we reset the position of all the
+            # vertices of the group we are merging into, which is not only
+            # needless, but also potentially very expensive.
             merge_vertices()
         elif not self.is_big and not other.is_big:
             merge_vertices()
