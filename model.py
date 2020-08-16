@@ -68,7 +68,6 @@ class Model(EventDispatcher):
     def merge_random_pieces(self, n):
         n = min(n, len(self.pieces) - 1)
         for _ in range(n):
-            t0 = time.time()
             piece = random.choice(list(self.pieces.values()))
             neighbour = self.pieces[random.choice(list(piece.neighbours))]
             self.quadtree.remove(piece, piece.bbox)
@@ -84,8 +83,6 @@ class Model(EventDispatcher):
             )
             self._merge_pieces(piece, neighbour)
             self.quadtree.insert(piece, piece.bbox)
-            t1 = time.time()
-            print(f"{t1-t0}")
 
     def move_piece(self, pid, dx, dy):
         piece = self.pieces[pid]
@@ -141,7 +138,6 @@ class Model(EventDispatcher):
 
     def _pieces_at_location(self, x, y):
         for piece in self.quadtree.intersect(bbox=(x, y, x, y)):
-        #     if piece.hitbox(x, y):
             yield piece
 
     def _top_piece_at_location(self, x, y):

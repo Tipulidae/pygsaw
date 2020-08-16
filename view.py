@@ -218,7 +218,6 @@ class View(pyglet.window.EventDispatcher):
         self.dispatch_event('on_mouse_down', x, y)
 
     def on_mouse_release(self, x_, y_, button, modifiers):
-        t0 = time.time()
         x, y = self.projection.view_to_clip_coord(x_, y_)
         for piece in self.held_pieces:
             if not piece.translation_groups:
@@ -234,9 +233,6 @@ class View(pyglet.window.EventDispatcher):
         self.held_pieces = []
         self.selection_group.x = 0
         self.selection_group.y = 0
-
-        t1 = time.time()
-        print(f"Time elapsed: {t1 - t0}")
 
     def on_mouse_drag(self, x_, y_, dx_, dy_, buttons, modifiers):
         if self.held_pieces:
