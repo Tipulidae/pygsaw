@@ -215,7 +215,6 @@ class View(pyglet.window.EventDispatcher):
         coordinates, which correspond to the "actual" coordinates in the model.
         """
         x, y = self.projection.view_to_clip_coord(x_, y_)
-
         self.dispatch_event('on_mouse_down', x, y)
 
     def on_mouse_release(self, x_, y_, button, modifiers):
@@ -247,10 +246,6 @@ class View(pyglet.window.EventDispatcher):
             self.selection_group.y += dy
             for piece in self.held_pieces:
                 piece.update_translation_groups(dx, dy)
-
-        # For each held piece that needs it, update the translation matrix
-        # Also update the selection group
-        # Also update the selection box
 
     def select_piece(self, pid):
         self.held_pieces = [self.pieces[pid]]

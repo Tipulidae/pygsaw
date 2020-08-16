@@ -2,7 +2,8 @@ import itertools
 import random
 import math
 from dataclasses import dataclass
-from enum import Enum
+from typing import List
+from abc import ABC, abstractmethod
 
 import vecrec
 
@@ -22,15 +23,26 @@ class Point:
         )
 
     def __add__(self, other):
-        return Point(self.x + other.x, self.y + other.y)
+        if isinstance(other, Point):
+            return Point(self.x + other.x, self.y + other.y)
+        elif isinstance(other, (float, int)):
+            return Point(self.x + other, self.y + other)
+        else:
+            raise TypeError()
 
     def __sub__(self, other):
-        return Point(self.x - other.x, self.y - other.y)
+        if isinstance(other, Point):
+            return Point(self.x - other.x, self.y - other.y)
+        elif isinstance(other, (float, int)):
+            return Point(self.x - other, self.y - other)
+        else:
+            raise TypeError()
 
-
-class Direction(Enum):
-    FORWARD = 0
-    BACKWARD = 1
+    def __mul__(self, other):
+        if isinstance(other, (float, int)):
+            return Point(self.x * other, self.y * other)
+        else:
+            raise TypeError()
 
 
 @dataclass
@@ -40,25 +52,26 @@ class Bezier:
     p3: Point = Point(0, 0)
     p4: Point = Point(0, 0)
 
-    def evaluate(self, n=10):
+    def evaluate(self, n=10) -> List[Point]:
+        """
+        Evaluates the Bezier curve n times. Although the parameterization
+        parameter is evenly spaced, this doesn't mean that the points along
+        the curve will be equidistant.
+
+        Will not include the last point of the curve.
+        :param n: Number of points to sample
+        :return: List of n Points along the Bezier curve
+        """
         return [
             self.at(t/n) for t in range(n)
         ]
 
-    def at(self, t: float):
-        return Point(
-            (
-                (1 - t) ** 3 * self.p1.x +
-                3 * (1 - t) ** 2 * t * self.p2.x +
-                3 * (1 - t) * t ** 2 * self.p3.x +
-                t ** 3 * self.p4.x
-            ),
-            (
-                (1 - t) ** 3 * self.p1.y +
-                3 * (1 - t) ** 2 * t * self.p2.y +
-                3 * (1 - t) * t ** 2 * self.p3.y +
-                t ** 3 * self.p4.y
-            )
+    def at(self, t: float) -> Point:
+        return (
+            self.p1 * (1 - t) ** 3 +
+            self.p2 * 3 * (1 - t) ** 2 * t +
+            self.p3 * 3 * (1 - t) * t ** 2 +
+            self.p4 * t ** 3
         )
 
     def translate(self, p):
@@ -97,25 +110,32 @@ class Bezier:
         )
 
 
-class Edge:
-    def evaluate(self, n=10):
-        return []
+class Edge(ABC):
+    @abstractmethod
+    def evaluate(self, n=10) -> List[Point]:
+        ...
 
+    @abstractmethod
     def rotate(self):
         # Rotate the edge 90 degrees counter-clockwise around the origin
-        pass
+        ...
 
+    @abstractmethod
     def translate(self, p: Point):
-        pass
+        ...
 
+    @abstractmethod
     def stretch(self, x, y):
-        pass
+        ...
 
+    @abstractmethod
     def reverse(self):
-        pass
+        ...
 
+    @abstractmethod
     def flip(self, y):
-        pass
+        # Mirror in the x-axis
+        ...
 
 
 @dataclass
@@ -125,7 +145,6 @@ class FlatEdge(Edge):
 
     def evaluate(self, n=10):
         return [self.p1]
-        # return [self.p1, self.p2]
 
     def reverse(self):
         return FlatEdge(self.p2, self.p1)
@@ -179,7 +198,6 @@ class CurvedEdge(Edge):
         )
 
     def rotate(self):
-        # Rotate the edge 90 degrees counter-clockwise around the origin
         return CurvedEdge(
             self.b1.rotate(),
             self.b2.rotate(),
@@ -204,7 +222,6 @@ class CurvedEdge(Edge):
         )
 
     def flip(self, y):
-        # Parry for PIL's inverted coordinate system
         return CurvedEdge(
             self.b1.flip(y),
             self.b2.flip(y),
@@ -256,22 +273,21 @@ def make_random_edges(num_edges):
 # This is the winding algorithm, adapted from
 # http://geomalgorithms.com/a03-_inclusion.html
 def point_in_polygon(p, polygon):
+    def is_left(p0: Point, p1: Point, p2: Point) -> float:
+        return (p1.x - p0.x) * (p2.y - p0.y) - (p2.x - p0.x) * (p1.y - p0.y)
+
     n = len(polygon) - 1
     winding_number = 0
     for i in range(n):
         if polygon[i].y <= p.y:
             if polygon[i + 1].y > p.y:
-                if _is_left(polygon[i], polygon[i + 1], p) > 0:
+                if is_left(polygon[i], polygon[i + 1], p) > 0:
                     winding_number += 1
         elif polygon[i + 1].y <= p.y:
-            if _is_left(polygon[i], polygon[i + 1], p) < 0:
+            if is_left(polygon[i], polygon[i + 1], p) < 0:
                 winding_number -= 1
 
     return winding_number != 0
-
-
-def _is_left(p0: Point, p1: Point, p2: Point) -> float:
-    return (p1.x - p0.x) * (p2.y - p0.y) - (p2.x - p0.x) * (p1.y - p0.y)
 
 
 def bounding_box(polygon):
