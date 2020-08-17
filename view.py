@@ -1,19 +1,77 @@
-import time
-
 import pyglet
 import pyglet.gl as gl
 import glooey
 import vecrec
 
 import earcut
-from sprite import SpriteGroup
 
 pyglet.resource.path = ['resources']
 pyglet.resource.reindex()
 
 GROUP_COUNT = 2
+PIECE_THRESHOLD = 50
 
-global PIECE_THRESHOLD
+
+class SpriteGroup(pyglet.graphics.Group):
+    """Shared sprite rendering group.
+
+    The group is automatically coalesced with other sprite groups sharing the
+    same parent group, texture and blend parameters.
+    """
+
+    def __init__(self, texture, blend_src, blend_dest, parent=None):
+        """Create a sprite group. Adapted from pyglet.sprite
+
+        :Parameters:
+            `texture` : `~pyglet.image.Texture`
+                The (top-level) texture containing the sprite image.
+            `blend_src` : int
+                OpenGL blend source mode; for example,
+                ``GL_SRC_ALPHA``.
+            `blend_dest` : int
+                OpenGL blend destination mode; for example,
+                ``GL_ONE_MINUS_SRC_ALPHA``.
+            `parent` : `~pyglet.graphics.Group`
+                Optional parent group.
+        """
+        super(SpriteGroup, self).__init__(parent)
+        self.texture = texture
+        self.blend_src = blend_src
+        self.blend_dest = blend_dest
+
+    def set_state(self):
+        gl.glEnable(self.texture.target)
+        gl.glBindTexture(self.texture.target, self.texture.id)
+
+        gl.glPushAttrib(gl.GL_COLOR_BUFFER_BIT | gl.GL_DEPTH_BUFFER_BIT)
+        gl.glEnable(gl.GL_BLEND)
+        gl.glBlendFunc(self.blend_src, self.blend_dest)
+
+        gl.glEnable(gl.GL_DEPTH_TEST)
+        gl.glDepthFunc(gl.GL_LESS)
+
+        gl.glEnable(gl.GL_ALPHA_TEST)
+        gl.glAlphaFunc(gl.GL_GREATER, 0.01)
+
+    def unset_state(self):
+        gl.glPopAttrib()
+        gl.glDisable(self.texture.target)
+
+    def __repr__(self):
+        return '%s(%r)' % (self.__class__.__name__, self.texture)
+
+    def __eq__(self, other):
+        return (other.__class__ is self.__class__ and
+                self.parent is other.parent and
+                self.texture.target == other.texture.target and
+                self.texture.id == other.texture.id and
+                self.blend_src == other.blend_src and
+                self.blend_dest == other.blend_dest)
+
+    def __hash__(self):
+        return hash((id(self.parent),
+                     self.texture.id, self.texture.target,
+                     self.blend_src, self.blend_dest))
 
 
 class TranslationGroup(pyglet.graphics.Group):
@@ -104,7 +162,7 @@ class OrthographicProjection:
 
 
 @glooey.register_event_type('on_cheat')
-class MyWindow(pyglet.window.Window):
+class Jigsaw(pyglet.window.Window):
     def __init__(self, pan_speed=0.8, **kwargs):
         super().__init__(**kwargs)
         self.batch = pyglet.graphics.Batch()
@@ -182,7 +240,7 @@ class MyWindow(pyglet.window.Window):
 )
 class View(pyglet.window.EventDispatcher):
     def __init__(self, texture, big_piece_threshold, **window_settings):
-        self.window = MyWindow(**window_settings)
+        self.window = Jigsaw(**window_settings)
         self.window.push_handlers(self)
         self.projection = self.window.my_projection
         self.texture = texture
@@ -220,7 +278,7 @@ class View(pyglet.window.EventDispatcher):
     def on_mouse_release(self, x_, y_, button, modifiers):
         x, y = self.projection.view_to_clip_coord(x_, y_)
         for piece in self.held_pieces:
-            if not piece.translation_groups:
+            if piece.is_small:
                 piece.group = self.group
 
             self.dispatch_event(
@@ -244,9 +302,10 @@ class View(pyglet.window.EventDispatcher):
                 piece.update_translation_groups(dx, dy)
 
     def select_piece(self, pid):
-        self.held_pieces = [self.pieces[pid]]
-        if not self.pieces[pid].translation_groups:
-            self.pieces[pid].group = self.selection_group
+        piece = self.pieces[pid]
+        self.held_pieces = [piece]
+        if piece.is_small:
+            piece.group = self.selection_group
 
     def move_piece(self, pid, x, y, z):
         self.pieces[pid].set_position(x, y, z)
@@ -270,11 +329,10 @@ class Piece:
         self.translation_groups = []
         self.original_vertices = None
         self.vertex_list = None
+        self.size = 1
         self._x, self._y, self._z = 0, 0, 0
         self.setup(polygon, width, height)
         self.set_position(*position)
-
-        self.size = 1
 
     def setup(self, polygon, width, height):
         sx = self.texture.tex_coords[6] / self.texture.width
@@ -312,25 +370,31 @@ class Piece:
 
     def set_position(self, x, y, z):
         self._x, self._y, self._z = x, y, z
-        if not self.translation_groups:
-            for vertices, vertex_list in zip(self.original_vertices,
-                                             self.vertex_list):
-                new_vertex_list = []
-                for i, v in enumerate(vertices):
-                    k = i % 3
-                    if k == 0:
-                        new_vertex_list.append(v+x)
-                    elif k == 1:
-                        new_vertex_list.append(v+y)
-                    elif k == 2:
-                        new_vertex_list.append(v+z)
-
-                vertex_list.vertices[:] = tuple(new_vertex_list)
+        if self.is_small:
+            self._update_vertices(x, y, z)
         else:
-            for translation_group in self.translation_groups:
-                translation_group.x = x
-                translation_group.y = y
-                translation_group.z = z
+            self._update_translation_groups(x, y, z)
+
+    def _update_vertices(self, x, y, z):
+        for vertices, vertex_list in zip(
+                self.original_vertices, self.vertex_list):
+            new_vertex_list = []
+            for i, v in enumerate(vertices):
+                k = i % 3
+                if k == 0:
+                    new_vertex_list.append(v + x)
+                elif k == 1:
+                    new_vertex_list.append(v + y)
+                elif k == 2:
+                    new_vertex_list.append(v + z)
+
+            vertex_list.vertices[:] = tuple(new_vertex_list)
+
+    def _update_translation_groups(self, x, y, z):
+        for translation_group in self.translation_groups:
+            translation_group.x = x
+            translation_group.y = y
+            translation_group.z = z
 
     def move(self, dx, dy, dz):
         self.set_position(self._x + dx, self._y + dy, self._z + dz)
@@ -342,45 +406,40 @@ class Piece:
             group.z += dz
 
     def merge(self, other):
-        def merge_vertices():
-            self.original_vertices += other.original_vertices
-            self.vertex_list += other.vertex_list
-
         if self.is_big and other.is_big:
-            merge_vertices()
             self.translation_groups += other.translation_groups
-        elif self.is_big and not other.is_big:
-            merge_vertices()
+        elif self.is_big and other.is_small:
             other.set_position(0, 0, 0)
             tg = max(self.translation_groups, key=(lambda g: g.size))
             tg.size += other.size
             other.group = tg
-        elif not self.is_big and other.is_big:
+        elif self.is_small and other.is_big:
             self.set_position(0, 0, 0)
             self.translation_groups = other.translation_groups
             tg = max(self.translation_groups, key=(lambda g: g.size))
             tg.size += self.size
             self.group = tg
-            # OBS!! Very important to do this AFTER changing group, for
-            # performance reasons! Otherwise we reset the position of all the
-            # vertices of the group we are merging into, which is not only
-            # needless, but also potentially very expensive.
-            merge_vertices()
-        elif not self.is_big and not other.is_big:
-            merge_vertices()
+        elif self.is_small and other.is_small:
             if self.size + other.size >= PIECE_THRESHOLD:
                 x, y, z = self.x, self.y, self.z
                 self.set_position(0, 0, 0)
+                other.set_position(0, 0, 0)
                 translation_group = TranslationGroup(x=x, y=y, z=z)
                 translation_group.size = self.size
                 self.translation_groups = [translation_group]
-                self.group = translation_group
+                self.group = other.group = translation_group
 
+        self.original_vertices += other.original_vertices
+        self.vertex_list += other.vertex_list
         self.size += other.size
 
     @property
     def is_big(self):
         return self.size >= PIECE_THRESHOLD
+
+    @property
+    def is_small(self):
+        return not self.is_big
 
     @property
     def x(self):

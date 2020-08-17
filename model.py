@@ -1,5 +1,4 @@
 import math
-import time
 import random
 import itertools
 from dataclasses import dataclass
@@ -39,13 +38,7 @@ class Model(EventDispatcher):
         self.current_max_z_level = self.num_pieces
 
     def piece_at_coordinate(self, x, y):
-        # Find top-most piece at given coordinate and return its pid
-        # If no piece is at the coordinate, return None
-        piece = self._top_piece_at_location(x, y)
-        if piece is None:
-            return None
-        else:
-            return piece.pid
+        return self._top_piece_at_location(x, y)
 
     def start_selection_box(self, x, y):
         # New selection box with one corner at x, y

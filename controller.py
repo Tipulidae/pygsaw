@@ -30,12 +30,11 @@ class Controller:
             )
 
     def on_mouse_down(self, x, y):
-        pid = self.model.piece_at_coordinate(x, y)
-        if pid is not None:
-            self.model.select_piece(pid)
-            self.view.select_piece(pid)
-        else:
+        if (piece := self.model.piece_at_coordinate(x, y)) is None:
             self.model.start_selection_box(x, y)
+        else:
+            self.model.select_piece(piece.pid)
+            self.view.select_piece(piece.pid)
 
     def on_mouse_up(self, x, y):
         pass
