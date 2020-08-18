@@ -22,6 +22,9 @@ class Point:
             (p2.x - p1.x) ** 2 + (p2.y - p1.y) ** 2
         )
 
+    def dot(self, p):
+        return Point(self.x * p.x, self.y * p.y)
+
     def __add__(self, other):
         if isinstance(other, Point):
             return Point(self.x + other.x, self.y + other.y)

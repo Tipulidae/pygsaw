@@ -2,7 +2,7 @@ import math
 import random
 import itertools
 from dataclasses import dataclass
-from typing import List, Set
+from typing import List, Set, Dict
 
 import vecrec
 import glooey
@@ -10,7 +10,7 @@ from pyglet.window import EventDispatcher
 from tqdm import tqdm
 from pyqtree import Index as QuadTree
 
-from bezier import Point, make_random_edges, bounding_box
+from bezier import Point, make_random_edges, bounding_box, point_in_polygon
 
 
 @glooey.register_event_type('on_model_piece_moved', 'on_pieces_merged')
@@ -131,7 +131,8 @@ class Model(EventDispatcher):
 
     def _pieces_at_location(self, x, y):
         for piece in self.quadtree.intersect(bbox=(x, y, x, y)):
-            yield piece
+            if piece.contains(Point(x, y), self.nx):
+                yield piece
 
     def _top_piece_at_location(self, x, y):
         return max(
@@ -144,7 +145,7 @@ class Model(EventDispatcher):
 @dataclass
 class Piece:
     pid: int
-    polygon: List[Point]
+    polygon: Dict[int, List[Point]]
     bounding_box: vecrec.Rect
     origin: Point
     neighbours: Set[int]
@@ -165,18 +166,45 @@ class Piece:
             self.y + self.bounding_box.top
         )
 
+    @property
+    def position(self):
+        return Point(self.x, self.y)
+
     def merge(self, other):
         assert isinstance(other, Piece)
         self.members = self.members.union(other.members)
         self.neighbours = self.neighbours.union(other.neighbours)
         self.neighbours.remove(self.pid)
         self.neighbours.remove(other.pid)
+        self.polygon = {**self.polygon, **other.polygon}
         self.bounding_box = vecrec.Rect.from_sides(
             left=min(self.bounding_box.left, other.bounding_box.left),
             right=max(self.bounding_box.right, other.bounding_box.right),
             bottom=min(self.bounding_box.bottom, other.bounding_box.bottom),
             top=max(self.bounding_box.top, other.bounding_box.top)
         )
+
+    def contains(self, point: Point, nx: int) -> bool:
+        point = point - self.position
+        pid = point_to_pid(point, nx, self.width, self.height)
+        offset = Point(self.width * (pid % nx), self.height * (pid // nx))
+
+        neighbour = closest_neighbour_pid(
+            pid,
+            point - offset,
+            self.width,
+            self.height,
+            nx
+        )
+
+        if pid in self.members and neighbour in self.members:
+            return True
+        elif pid in self.members and neighbour not in self.members:
+            return point_in_polygon(point, self.polygon[pid])
+        elif pid not in self.members and neighbour in self.members:
+            return point_in_polygon(point, self.polygon[neighbour])
+        else:
+            return False
 
 
 def make_jigsaw_cut(image_width, image_height, nx, ny):
@@ -215,7 +243,7 @@ def make_jigsaw_cut(image_width, image_height, nx, ny):
 
     pieces = {pid: Piece(
         pid=pid,
-        polygon=(polygon := piece_contour(pid)),
+        polygon={pid: (polygon := piece_contour(pid))},
         bounding_box=bounding_box(polygon),
         origin=(origin := Point(width * (pid % nx), height * (pid // nx))),
         neighbours=create_neighbours(pid, num_pieces, nx),
@@ -242,3 +270,22 @@ def create_neighbours(pid, n, nx):
 def create_jigsaw_dimensions(num_pieces):
     nx = ny = math.floor(math.sqrt(num_pieces))
     return nx, ny, num_pieces
+
+
+def point_to_pid(p, nx, width, height):
+    return int(
+        ((p.x - width / 2) // width) % nx +
+        ((p.y - height / 2) // height) * nx
+    )
+
+
+def closest_neighbour_pid(pid, point, width, height, nx):
+    point = point.dot(Point(height/width, 1))
+    if abs(point.x) < point.y:  # North
+        return pid + nx
+    elif abs(point.x) < -point.y:  # South
+        return pid - nx
+    elif abs(point.y) < point.x:  # East
+        return pid + 1
+    else:  # West
+        return pid - 1

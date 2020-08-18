@@ -23,7 +23,7 @@ class Controller:
                                desc="Drawing pieces"):
             self.view.create_piece(
                 pid,
-                piece.polygon,
+                piece.polygon[pid],
                 (piece.x, piece.y, piece.z),
                 piece.width,
                 piece.height
