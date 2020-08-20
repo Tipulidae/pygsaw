@@ -181,7 +181,10 @@ class Piece:
     def contains(self, point: Point, nx: int) -> bool:
         point = point - self.position
         pid = point_to_pid(point, nx, self.width, self.height)
-        offset = Point(self.width * (pid % nx), self.height * (pid // nx))
+        offset = Point(
+            self.width * (1 + pid % nx),
+            self.height * (1 + pid // nx)
+        )
 
         neighbour = closest_neighbour_pid(
             pid,
