@@ -40,23 +40,13 @@ class Model(EventDispatcher):
     def piece_at_coordinate(self, x, y):
         return self._top_piece_at_location(x, y)
 
-    def start_selection_box(self, x, y):
-        # New selection box with one corner at x, y
-        pass
-
-    def select_piece(self, pid):
-        # The piece was marked as selected in the view
-        piece = self.pieces[pid]
-        if piece.z < self.current_max_z_level - 1:
-            piece.z = self.current_max_z_level
-            self.current_max_z_level += 1
-            self.dispatch_event(
-                'on_model_piece_moved',
-                pid,
-                piece.x,
-                piece.y,
-                piece.z
+    def piece_ids_in_rect(self, rect):
+        return list(map(
+            lambda piece: piece.pid,
+            self.quadtree.intersect(
+                bbox=(rect.left, rect.bottom, rect.right, rect.top)
             )
+        ))
 
     def merge_random_pieces(self, n):
         n = min(n, len(self.pieces) - 1)
@@ -77,40 +67,44 @@ class Model(EventDispatcher):
             self._merge_pieces(piece, neighbour)
             self.quadtree.insert(piece, piece.bbox)
 
-    def move_piece(self, pid, dx, dy):
+    def move_piece(self, pid, dx, dy, snap=True):
         piece = self.pieces[pid]
         self.quadtree.remove(piece, piece.bbox)
         piece.x += dx
         piece.y += dy
 
-        # Snap!
-        for neighbour_pid in piece.neighbours:
-            neighbour = self.pieces[neighbour_pid]
-            dist = Point.dist(
-                Point(piece.x, piece.y),
-                Point(neighbour.x, neighbour.y)
-            )
-            if dist < self.snap_distance:
-                piece.x = neighbour.x
-                piece.y = neighbour.y
-                self.dispatch_event(
-                    'on_model_piece_moved',
-                    pid,
-                    piece.x,
-                    piece.y,
-                    piece.z
+        if snap:
+            for neighbour_pid in piece.neighbours:
+                neighbour = self.pieces[neighbour_pid]
+                dist = Point.dist(
+                    Point(piece.x, piece.y),
+                    Point(neighbour.x, neighbour.y)
                 )
-                self._merge_pieces(piece, neighbour)
+                if dist < self.snap_distance:
+                    piece.x = neighbour.x
+                    piece.y = neighbour.y
+                    self.dispatch_event(
+                        'on_model_piece_moved',
+                        pid,
+                        piece.x,
+                        piece.y,
+                        piece.z
+                    )
+
+                    self._merge_pieces(piece, neighbour)
 
         self.quadtree.insert(piece, piece.bbox)
 
-        self.dispatch_event(
-            'on_model_piece_moved',
-            pid,
-            piece.x,
-            piece.y,
-            piece.z
-        )
+    def move_pieces(self, pids, dx, dy):
+        if len(pids) == 1:
+            self.move_piece(pids[0], dx, dy, snap=True)
+        else:
+            for pid in pids:
+                piece = self.pieces[pid]
+                self.quadtree.remove(piece, piece.bbox)
+                piece.x += dx
+                piece.y += dy
+                self.quadtree.insert(piece, piece.bbox)
 
     def _merge_pieces(self, p1, p2):
         # Merges p2 into p1

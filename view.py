@@ -1,9 +1,12 @@
+import time
+
 import pyglet
 import pyglet.gl as gl
 import glooey
 import vecrec
 
 import earcut
+from bezier import Point
 
 pyglet.resource.path = ['resources']
 pyglet.resource.reindex()
@@ -236,7 +239,7 @@ class Jigsaw(pyglet.window.Window):
 @glooey.register_event_type(
     'on_mouse_down',
     'on_mouse_up',
-    'on_view_piece_dropped'
+    'on_selection_box'
 )
 class View(pyglet.window.EventDispatcher):
     def __init__(self, texture, big_piece_threshold, **window_settings):
@@ -246,9 +249,12 @@ class View(pyglet.window.EventDispatcher):
         self.texture = texture
         self.group = pyglet.graphics.Group()
         self.selection_group = TranslationGroup(0, 0)
+        self.selection_box = SelectionBox()
         self.pieces = dict()
         self.current_max_z_level = len(self.pieces)
-        self.held_pieces = []
+        self.hand = Hand(
+            translation_group=self.selection_group,
+            default_group=self.group)
         global PIECE_THRESHOLD
         PIECE_THRESHOLD = big_piece_threshold
 
@@ -276,39 +282,39 @@ class View(pyglet.window.EventDispatcher):
         self.dispatch_event('on_mouse_down', x, y)
 
     def on_mouse_release(self, x_, y_, button, modifiers):
-        x, y = self.projection.view_to_clip_coord(x_, y_)
-        for piece in self.held_pieces:
-            if piece.is_small:
-                piece.group = self.group
-
+        if self.selection_box.is_active:
+            x, y = self.projection.view_to_clip_coord(x_, y_)
+            self.selection_box.drag_to(x, y)
             self.dispatch_event(
-                'on_view_piece_dropped',
-                piece.pid,
-                self.selection_group.x,
-                self.selection_group.y
+                'on_selection_box',
+                self.selection_box.rect
             )
-
-        self.held_pieces = []
-        self.selection_group.x = 0
-        self.selection_group.y = 0
+            self.selection_box.is_active = False
+        else:
+            self.hand.mouse_up()
 
     def on_mouse_drag(self, x_, y_, dx_, dy_, buttons, modifiers):
-        if self.held_pieces:
+        if self.selection_box.is_active:
+            x, y = self.projection.view_to_clip_coord(x_, y_)
+            self.selection_box.drag_to(x, y)
+        elif not self.hand.is_empty:
             dx = dx_ / self.projection.zoom_level
             dy = dy_ / self.projection.zoom_level
-            self.selection_group.x += dx
-            self.selection_group.y += dy
-            for piece in self.held_pieces:
-                piece.update_translation_groups(dx, dy)
+            self.hand.move(dx, dy)
 
-    def select_piece(self, pid):
-        piece = self.pieces[pid]
-        self.held_pieces = [piece]
-        if piece.is_small:
-            piece.group = self.selection_group
+    def start_selection_box(self, x, y):
+        # Let's not worry about shift/control to make a bigger selection now.
+        self.selection_box.activate(x, y)
+        self.hand.drop_everything()
+
+    def mouse_down_on_piece(self, pid):
+        self.hand.select(self.pieces[pid])
+
+    def select_pieces(self, pids):
+        self.hand.select_pieces({pid: self.pieces[pid] for pid in pids})
 
     def move_piece(self, pid, x, y, z):
-        self.pieces[pid].set_position(x, y, z)
+        self.hand.move_piece(self.pieces[pid], x, y, z)
 
     def merge_pieces(self, pid1, pid2):
         self.pieces[pid1].merge(self.pieces[pid2])
@@ -424,10 +430,16 @@ class Piece:
                 x, y, z = self.x, self.y, self.z
                 self.set_position(0, 0, 0)
                 other.set_position(0, 0, 0)
-                translation_group = TranslationGroup(x=x, y=y, z=z)
+                translation_group = TranslationGroup(
+                    x=x + self.group.parent.x,
+                    y=y + self.group.parent.y,
+                    z=z + self.group.parent.z)
                 translation_group.size = self.size
                 self.translation_groups = [translation_group]
                 self.group = other.group = translation_group
+            else:
+                other.set_position(self.x, self.y, self.z)
+                other.group = self.group
 
         self.original_vertices += other.original_vertices
         self.vertex_list += other.vertex_list
@@ -477,3 +489,102 @@ class Piece:
                 self._group,
                 self.batch
             )
+
+
+class SelectionBox:
+    def __init__(self):
+        self.is_active = False
+        self.origin = (0, 0)
+        self.dest = (0, 0)
+
+    def activate(self, x, y):
+        self.origin = (x, y)
+        self.is_active = True
+
+    def drag_to(self, x, y):
+        self.dest = (x, y)
+
+    @property
+    def rect(self):
+        return vecrec.Rect(
+            left=min(self.origin[0], self.dest[0]),
+            bottom=min(self.origin[1], self.dest[1]),
+            width=abs(self.origin[0] - self.dest[0]),
+            height=abs(self.origin[1] - self.dest[1])
+        )
+
+
+@glooey.register_event_type(
+    'on_view_pieces_moved'
+)
+class Hand(pyglet.window.EventDispatcher):
+    def __init__(self, translation_group, default_group):
+        self.pieces = dict()
+        self.translation_group = translation_group
+        self.default_group = default_group
+        self.step = (0, 0)
+
+    def select(self, piece):
+        if piece.pid not in self.pieces:
+            self.drop_everything()
+            self.pieces = {piece.pid: piece}
+            if piece.is_small:
+                piece.group = self.translation_group
+
+    def select_pieces(self, new_pieces):
+        t0 = time.time()
+        assert len(self.pieces) == 0
+        self.pieces = new_pieces
+        for piece in self.pieces.values():
+            if piece.is_small:
+                piece.group = self.translation_group
+        t1 = time.time()
+        print(f"{len(new_pieces)}: {t1 - t0}")
+
+    def mouse_up(self):
+        self.dispatch_event(
+            'on_view_pieces_moved',
+            list(self.pieces),
+            self.translation_group.x - self.step[0],
+            self.translation_group.y - self.step[1]
+        )
+        self.step = self.translation_group.x, self.translation_group.y
+
+    def drop_everything(self):
+        for pid, piece in self.pieces.items():
+            if piece.is_small:
+                piece.move(
+                    self.translation_group.x,
+                    self.translation_group.y,
+                    self.translation_group.z
+                )
+                piece.group = self.default_group
+
+        self.pieces = dict()
+        self.translation_group.x = 0
+        self.translation_group.y = 0
+        self.step = 0, 0
+
+    def move(self, dx, dy):
+        self.translation_group.x += dx
+        self.translation_group.y += dy
+        for piece in self.pieces.values():
+            piece.update_translation_groups(dx, dy)
+
+    def move_piece(self, piece, x, y, z):
+        if piece.pid in self.pieces:
+            if piece.is_small:
+                p1 = Point(x, y)
+                p2 = Point(piece.x, piece.y)
+                p3 = Point(self.translation_group.x, self.translation_group.y)
+                if Point.dist(diff := (p1 - p2 - p3), Point(0, 0)) > 1e-6:
+                    piece.move(diff.x, diff.y, z)
+            else:
+                piece.set_position(x, y, z)
+
+        else:
+            piece.set_position(x, y, z)
+
+    @property
+    def is_empty(self):
+        return len(self.pieces) == 0

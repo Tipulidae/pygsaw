@@ -16,6 +16,7 @@ class Controller:
         self.model = Model(texture.width, texture.height, num_pieces)
         self.view = View(texture, big_piece_threshold, **window_settings)
         self.view.push_handlers(self)
+        self.view.hand.push_handlers(self)
         self.model.push_handlers(self)
         self.view.window.push_handlers(self)
 
@@ -31,16 +32,15 @@ class Controller:
 
     def on_mouse_down(self, x, y):
         if (piece := self.model.piece_at_coordinate(x, y)) is None:
-            self.model.start_selection_box(x, y)
+            self.view.start_selection_box(x, y)
         else:
-            self.model.select_piece(piece.pid)
-            self.view.select_piece(piece.pid)
+            self.view.mouse_down_on_piece(piece.pid)
 
     def on_mouse_up(self, x, y):
         pass
 
-    def on_view_piece_dropped(self, pid, dx, dy):
-        self.model.move_piece(pid, dx, dy)
+    def on_view_pieces_moved(self, pids, dx, dy):
+        self.model.move_pieces(pids, dx, dy)
 
     def on_model_piece_moved(self, pid, x, y, z):
         self.view.move_piece(pid, x, y, z)
@@ -50,3 +50,7 @@ class Controller:
 
     def on_cheat(self, n):
         self.model.merge_random_pieces(n)
+
+    def on_selection_box(self, rect):
+        pids = self.model.piece_ids_in_rect(rect)
+        self.view.select_pieces(pids)
