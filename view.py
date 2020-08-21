@@ -6,7 +6,6 @@ import glooey
 import vecrec
 
 import earcut
-from bezier import Point
 
 pyglet.resource.path = ['resources']
 pyglet.resource.reindex()
@@ -310,8 +309,8 @@ class View(pyglet.window.EventDispatcher):
     def select_pieces(self, pids):
         self.hand.select_pieces({pid: self.pieces[pid] for pid in pids})
 
-    def move_piece(self, pid, x, y, z):
-        self.hand.move_piece(self.pieces[pid], x, y, z)
+    def snap_piece_to_position(self, pid, x, y, z):
+        self.hand.snap_piece_to_position(self.pieces[pid], x, y, z)
 
     def merge_pieces(self, pid1, pid2):
         self.pieces[pid1].merge(self.pieces[pid2])
@@ -320,12 +319,7 @@ class View(pyglet.window.EventDispatcher):
     def remember_new_z_levels(self, msg):
         self.hand.translation_group.z += len(msg)
         for z, pid in msg:
-            piece = self.pieces[pid]
-            if piece.is_small:
-                piece.intended_z = z
-            else:
-                piece.update_translation_groups(0, 0, z)
-
+            self.pieces[pid].remember_z_position(z)
 
 
 class Piece:
@@ -344,7 +338,6 @@ class Piece:
         self.vertex_list = None
         self.size = 1
         self._x, self._y, self._z = 0, 0, 0
-        self.intended_z = 0
         self.setup(polygon, width, height)
         self.set_position(*position)
 
@@ -410,23 +403,31 @@ class Piece:
             translation_group.y = y
             translation_group.z = z
 
-    def move(self, dx, dy, z):
-        self.set_position(self._x + dx, self._y + dy, z)
-
-    def update_translation_groups(self, dx, dy, dz=0):
-        for group in self.translation_groups:
-            group.x += dx
-            group.y += dy
-            group.z += dz
-
-    def fix_z_level(self):
+    def remember_position(self, x, y, z):
+        self._x, self._y, self._z = x, y, z
         if self.is_big:
-            for group in self.translation_groups:
-                group.z = self.intended_z
+            self.commit_position()
+
+    def remember_z_position(self, z):
+        self.remember_position(self._x, self._y, z)
+
+    def remember_relative_position(self, dx, dy, dz):
+        self._x += dx
+        self._y += dy
+        self._z += dz
+        if self.is_big:
+            self.commit_position()
+
+    def commit_position(self):
+        if self.is_small:
+            self._update_vertices(self._x, self._y, self._z)
+        else:
+            self._update_translation_groups(self._x, self._y, self._z)
 
     def merge(self, other):
         if self.is_big and other.is_big:
             self.translation_groups += other.translation_groups
+            self.commit_position()
         elif self.is_big and other.is_small:
             other.set_position(0, 0, 0)
             tg = max(self.translation_groups, key=(lambda g: g.size))
@@ -438,20 +439,23 @@ class Piece:
             tg = max(self.translation_groups, key=(lambda g: g.size))
             tg.size += self.size
             self.group = tg
+            self.remember_position(tg.x, tg.y, tg.z)
         elif self.is_small and other.is_small:
             if self.size + other.size >= PIECE_THRESHOLD:
                 x, y, z = self.x, self.y, self.z
                 self.set_position(0, 0, 0)
                 other.set_position(0, 0, 0)
-                translation_group = TranslationGroup(
-                    x=x + self.group.parent.x,
-                    y=y + self.group.parent.y,
-                    z=z + self.group.parent.z)
+                self.remember_position(x, y, z)
+                translation_group = TranslationGroup(x=x, y=y, z=z)
                 translation_group.size = self.size
                 self.translation_groups = [translation_group]
                 self.group = other.group = translation_group
             else:
-                other.set_position(self.x, self.y, self.z)
+                other.set_position(
+                    self.x - self.group.parent.x,
+                    self.y - self.group.parent.y,
+                    self.z - self.group.parent.z
+                )
                 other.group = self.group
 
         self.original_vertices += other.original_vertices
@@ -477,10 +481,6 @@ class Piece:
     @property
     def z(self):
         return self._z
-
-    @z.setter
-    def z(self, z):
-        self.set_position(self._x, self._y, z)
 
     @property
     def group(self):
@@ -548,7 +548,6 @@ class Hand(pyglet.window.EventDispatcher):
             self.pieces = {piece.pid: piece}
             if piece.is_small:
                 piece.group = self.translation_group
-        print(f"{piece.pid}: {piece.z}, {piece.intended_z}")
 
     def select_pieces(self, new_pieces):
         t0 = time.time()
@@ -579,15 +578,9 @@ class Hand(pyglet.window.EventDispatcher):
     def drop_everything(self):
         for pid, piece in self.pieces.items():
             if piece.is_small:
-                piece.move(
-                    self.translation_group.x,
-                    self.translation_group.y,
-                    piece.intended_z
-                )
                 piece.group = self.default_group
-                piece.intended_z = 0
-            else:
-                piece.fix_z_level()
+
+            piece.commit_position()
 
         self.pieces = dict()
         self.translation_group.x = 0
@@ -598,19 +591,14 @@ class Hand(pyglet.window.EventDispatcher):
         self.translation_group.x += dx
         self.translation_group.y += dy
         for piece in self.pieces.values():
-            piece.update_translation_groups(dx, dy)
+            piece.remember_relative_position(dx, dy, 0)
 
-    def move_piece(self, piece, x, y, z):
-        if piece.pid in self.pieces:
-            if piece.is_small:
-                p1 = Point(x, y)
-                p2 = Point(piece.x, piece.y)
-                p3 = Point(self.translation_group.x, self.translation_group.y)
-                if Point.dist(diff := (p1 - p2 - p3), Point(0, 0)) > 1e-6:
-                    piece.move(diff.x, diff.y, z)
-            else:
-                piece.set_position(x, y, z)
-
+    def snap_piece_to_position(self, piece, x, y, z):
+        if piece.pid in self.pieces and piece.is_small:
+            self.translation_group.x += x - piece.x
+            self.translation_group.y += y - piece.y
+            self.translation_group.z += z - piece.z
+            piece.remember_position(x, y, z)
         else:
             piece.set_position(x, y, z)
 

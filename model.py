@@ -14,7 +14,7 @@ from bezier import Point, make_random_edges, bounding_box, point_in_polygon
 
 
 @glooey.register_event_type(
-    'on_model_piece_moved',
+    'on_snap_piece_to_position',
     'on_pieces_merged',
     'on_z_levels_changed'
 )
@@ -62,7 +62,7 @@ class Model(EventDispatcher):
             piece.x = neighbour.x
             piece.y = neighbour.y
             self.dispatch_event(
-                'on_model_piece_moved',
+                'on_snap_piece_to_position',
                 piece.pid,
                 piece.x,
                 piece.y,
@@ -89,7 +89,7 @@ class Model(EventDispatcher):
                     piece.y = neighbour.y
                     neighbour.z = piece.z
                     self.dispatch_event(
-                        'on_model_piece_moved',
+                        'on_snap_piece_to_position',
                         pid,
                         piece.x,
                         piece.y,

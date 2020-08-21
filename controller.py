@@ -48,8 +48,8 @@ class Controller:
     def on_z_levels_changed(self, msg):
         self.view.remember_new_z_levels(msg)
 
-    def on_model_piece_moved(self, pid, x, y, z):
-        self.view.move_piece(pid, x, y, z)
+    def on_snap_piece_to_position(self, pid, x, y, z):
+        self.view.snap_piece_to_position(pid, x, y, z)
 
     def on_pieces_merged(self, pid1, pid2):
         self.view.merge_pieces(pid1, pid2)
