@@ -95,12 +95,15 @@ class TranslationGroup(pyglet.graphics.Group):
 
 class SelectionBoxGroup(pyglet.graphics.Group):
     def set_state(self):
-        pyglet.gl.glEnable(pyglet.gl.GL_LINE_SMOOTH)
-        pyglet.gl.glLineWidth(3)
+        gl.glEnable(pyglet.gl.GL_LINE_SMOOTH)
+        gl.glLineWidth(3)
+
+        gl.glEnable(gl.GL_DEPTH_TEST)
+        gl.glDepthFunc(gl.GL_LESS)
 
     def unset_state(self):
-        pyglet.gl.glDisable(pyglet.gl.GL_LINE_SMOOTH)
-        pyglet.gl.glLineWidth(1)
+        gl.glDisable(pyglet.gl.GL_LINE_SMOOTH)
+        gl.glLineWidth(1)
 
 
 class OrthographicProjection:
