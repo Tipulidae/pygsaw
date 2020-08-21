@@ -78,7 +78,7 @@ class SpriteGroup(pyglet.graphics.Group):
 
 
 class TranslationGroup(pyglet.graphics.Group):
-    def __init__(self, x, y, z=10000, *args, **kwargs):
+    def __init__(self, x, y, z=0, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.x = x
         self.y = y
