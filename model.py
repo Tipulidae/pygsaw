@@ -13,7 +13,11 @@ from pyqtree import Index as QuadTree
 from bezier import Point, make_random_edges, bounding_box, point_in_polygon
 
 
-@glooey.register_event_type('on_model_piece_moved', 'on_pieces_merged')
+@glooey.register_event_type(
+    'on_model_piece_moved',
+    'on_pieces_merged',
+    'on_z_levels_changed'
+)
 class Model(EventDispatcher):
     def __init__(
             self,
@@ -83,6 +87,7 @@ class Model(EventDispatcher):
                 if dist < self.snap_distance:
                     piece.x = neighbour.x
                     piece.y = neighbour.y
+                    neighbour.z = piece.z
                     self.dispatch_event(
                         'on_model_piece_moved',
                         pid,
@@ -105,6 +110,28 @@ class Model(EventDispatcher):
                 piece.x += dx
                 piece.y += dy
                 self.quadtree.insert(piece, piece.bbox)
+
+    def move_pieces_to_top(self, pids):
+        new_z_levels = list(range(
+            self.current_max_z_level,
+            self.current_max_z_level + len(pids)
+        ))
+        self.current_max_z_level += len(pids)
+
+        sorted_pieces = sorted(
+            [self.pieces[pid] for pid in pids],
+            key=lambda p: p.z
+        )
+
+        msg = []
+        for z, piece in zip(new_z_levels, sorted_pieces):
+            piece.z = z
+            msg.append((z, piece.pid))
+
+        self.dispatch_event(
+            'on_z_levels_changed',
+            msg
+        )
 
     def _merge_pieces(self, p1, p2):
         # Merges p2 into p1

@@ -42,6 +42,12 @@ class Controller:
     def on_view_pieces_moved(self, pids, dx, dy):
         self.model.move_pieces(pids, dx, dy)
 
+    def on_view_select_pieces(self, pids):
+        self.model.move_pieces_to_top(pids)
+
+    def on_z_levels_changed(self, msg):
+        self.view.remember_new_z_levels(msg)
+
     def on_model_piece_moved(self, pid, x, y, z):
         self.view.move_piece(pid, x, y, z)
 

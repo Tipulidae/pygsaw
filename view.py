@@ -78,7 +78,7 @@ class SpriteGroup(pyglet.graphics.Group):
 
 
 class TranslationGroup(pyglet.graphics.Group):
-    def __init__(self, x, y, z=0, *args, **kwargs):
+    def __init__(self, x, y, z=10000, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.x = x
         self.y = y
@@ -248,13 +248,9 @@ class View(pyglet.window.EventDispatcher):
         self.projection = self.window.my_projection
         self.texture = texture
         self.group = pyglet.graphics.Group()
-        self.selection_group = TranslationGroup(0, 0)
         self.selection_box = SelectionBox()
         self.pieces = dict()
-        self.current_max_z_level = len(self.pieces)
-        self.hand = Hand(
-            translation_group=self.selection_group,
-            default_group=self.group)
+        self.hand = Hand(default_group=self.group)
         global PIECE_THRESHOLD
         PIECE_THRESHOLD = big_piece_threshold
 
@@ -269,6 +265,7 @@ class View(pyglet.window.EventDispatcher):
             self.window.batch,
             self.group
         )
+        self.hand.translation_group.z += 1
 
     def on_mouse_press(self, x_, y_, button, modifiers):
         """
@@ -320,6 +317,16 @@ class View(pyglet.window.EventDispatcher):
         self.pieces[pid1].merge(self.pieces[pid2])
         self.pieces.pop(pid2)
 
+    def remember_new_z_levels(self, msg):
+        self.hand.translation_group.z += len(msg)
+        for z, pid in msg:
+            piece = self.pieces[pid]
+            if piece.is_small:
+                piece.intended_z = z
+            else:
+                piece.update_translation_groups(0, 0, z)
+
+
 
 class Piece:
     def __init__(self, pid, polygon, position, width, height, texture, batch, group):
@@ -337,6 +344,7 @@ class Piece:
         self.vertex_list = None
         self.size = 1
         self._x, self._y, self._z = 0, 0, 0
+        self.intended_z = 0
         self.setup(polygon, width, height)
         self.set_position(*position)
 
@@ -402,14 +410,19 @@ class Piece:
             translation_group.y = y
             translation_group.z = z
 
-    def move(self, dx, dy, dz):
-        self.set_position(self._x + dx, self._y + dy, self._z + dz)
+    def move(self, dx, dy, z):
+        self.set_position(self._x + dx, self._y + dy, z)
 
     def update_translation_groups(self, dx, dy, dz=0):
         for group in self.translation_groups:
             group.x += dx
             group.y += dy
             group.z += dz
+
+    def fix_z_level(self):
+        if self.is_big:
+            for group in self.translation_groups:
+                group.z = self.intended_z
 
     def merge(self, other):
         if self.is_big and other.is_big:
@@ -515,26 +528,36 @@ class SelectionBox:
 
 
 @glooey.register_event_type(
-    'on_view_pieces_moved'
+    'on_view_pieces_moved',
+    'on_view_select_pieces'
 )
 class Hand(pyglet.window.EventDispatcher):
-    def __init__(self, translation_group, default_group):
-        self.pieces = dict()
-        self.translation_group = translation_group
+    def __init__(self, default_group):
         self.default_group = default_group
+        self.translation_group = TranslationGroup(0, 0)
+        self.pieces = dict()
         self.step = (0, 0)
 
     def select(self, piece):
         if piece.pid not in self.pieces:
             self.drop_everything()
+            self.dispatch_event(
+                'on_view_select_pieces',
+                [piece.pid]
+            )
             self.pieces = {piece.pid: piece}
             if piece.is_small:
                 piece.group = self.translation_group
+        print(f"{piece.pid}: {piece.z}, {piece.intended_z}")
 
     def select_pieces(self, new_pieces):
         t0 = time.time()
         assert len(self.pieces) == 0
         self.pieces = new_pieces
+        self.dispatch_event(
+            'on_view_select_pieces',
+            list(self.pieces)
+        )
         for piece in self.pieces.values():
             if piece.is_small:
                 piece.group = self.translation_group
@@ -548,7 +571,10 @@ class Hand(pyglet.window.EventDispatcher):
             self.translation_group.x - self.step[0],
             self.translation_group.y - self.step[1]
         )
-        self.step = self.translation_group.x, self.translation_group.y
+        self.step = (
+            self.translation_group.x,
+            self.translation_group.y
+        )
 
     def drop_everything(self):
         for pid, piece in self.pieces.items():
@@ -556,9 +582,12 @@ class Hand(pyglet.window.EventDispatcher):
                 piece.move(
                     self.translation_group.x,
                     self.translation_group.y,
-                    self.translation_group.z
+                    piece.intended_z
                 )
                 piece.group = self.default_group
+                piece.intended_z = 0
+            else:
+                piece.fix_z_level()
 
         self.pieces = dict()
         self.translation_group.x = 0

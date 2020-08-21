@@ -4,7 +4,6 @@ from controller import Controller
 
 
 if __name__ == '__main__':
-
     controller = Controller(
         image_path='hongkong.jpg',
         num_pieces=200,
