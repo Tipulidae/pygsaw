@@ -31,10 +31,10 @@ class Controller:
             )
 
     def on_mouse_down(self, x, y):
-        if (piece := self.model.piece_at_coordinate(x, y)) is None:
-            self.view.start_selection_box(x, y)
-        else:
+        if (piece := self.model.piece_at_coordinate(x, y)) is not None:
             self.view.mouse_down_on_piece(piece.pid)
+        else:
+            self.view.start_selection_box(x, y)
 
     def on_mouse_up(self, x, y):
         pass

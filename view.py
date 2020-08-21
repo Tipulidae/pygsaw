@@ -12,6 +12,7 @@ pyglet.resource.reindex()
 
 GROUP_COUNT = 2
 PIECE_THRESHOLD = 50
+MAX_Z_DEPTH = 10000000
 
 
 class SpriteGroup(pyglet.graphics.Group):
@@ -92,12 +93,21 @@ class TranslationGroup(pyglet.graphics.Group):
         pyglet.gl.glPopMatrix()
 
 
+class SelectionBoxGroup(pyglet.graphics.Group):
+    def set_state(self):
+        pyglet.gl.glEnable(pyglet.gl.GL_LINE_SMOOTH)
+        pyglet.gl.glLineWidth(3)
+
+    def unset_state(self):
+        pyglet.gl.glDisable(pyglet.gl.GL_LINE_SMOOTH)
+        pyglet.gl.glLineWidth(1)
+
+
 class OrthographicProjection:
-    def __init__(self, width, height, z_span=1, zoom=1.0):
+    def __init__(self, width, height, zoom=1.0):
         self.view_port = vecrec.Rect(
             left=0, bottom=0, width=width, height=height)
         self.clip_port = self.view_port
-        self.z_span = z_span
         self.zoom_level = zoom
         self.update()
 
@@ -157,8 +167,8 @@ class OrthographicProjection:
             self.clip_port.right,
             self.clip_port.bottom,
             self.clip_port.top,
-            -self.z_span,
-            self.z_span
+            -MAX_Z_DEPTH,
+            MAX_Z_DEPTH
         )
         gl.glMatrixMode(gl.GL_MODELVIEW)
 
@@ -172,7 +182,6 @@ class Jigsaw(pyglet.window.Window):
         self.pan_speed = pan_speed
         self.my_projection = OrthographicProjection(
             *self.get_viewport_size(),
-            z_span=100000,
             zoom=1.0
         )
         self.old_width, self.old_height = self.get_viewport_size()
@@ -247,7 +256,7 @@ class View(pyglet.window.EventDispatcher):
         self.projection = self.window.my_projection
         self.texture = texture
         self.group = pyglet.graphics.Group()
-        self.selection_box = SelectionBox()
+        self.selection_box = SelectionBox(self.window.batch)
         self.pieces = dict()
         self.hand = Hand(default_group=self.group)
         global PIECE_THRESHOLD
@@ -285,7 +294,7 @@ class View(pyglet.window.EventDispatcher):
                 'on_selection_box',
                 self.selection_box.rect
             )
-            self.selection_box.is_active = False
+            self.selection_box.deactivate()
         else:
             self.hand.mouse_up()
 
@@ -447,7 +456,7 @@ class Piece:
                 other.set_position(0, 0, 0)
                 self.remember_position(x, y, z)
                 translation_group = TranslationGroup(x=x, y=y, z=z)
-                translation_group.size = self.size
+                translation_group.size = self.size + other.size
                 self.translation_groups = [translation_group]
                 self.group = other.group = translation_group
             else:
@@ -505,17 +514,37 @@ class Piece:
 
 
 class SelectionBox:
-    def __init__(self):
+    def __init__(self, batch):
         self.is_active = False
         self.origin = (0, 0)
         self.dest = (0, 0)
+        self.batch = batch
+        self.group = SelectionBoxGroup()
+        self.z = MAX_Z_DEPTH
+
+        self.vertex_list = self.batch.add(
+            4, gl.GL_LINE_LOOP, self.group,
+            ('v3f', (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)),
+            ('c3B', (255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 255, 0))
+        )
 
     def activate(self, x, y):
         self.origin = (x, y)
         self.is_active = True
 
+    def deactivate(self):
+        self.vertex_list.vertices[:] = (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+        self.is_active = False
+
     def drag_to(self, x, y):
         self.dest = (x, y)
+        rect = self.rect
+        self.vertex_list.vertices[:] = (
+            rect.left, rect.bottom, self.z,
+            rect.right, rect.bottom, self.z,
+            rect.right, rect.top, self.z,
+            rect.left, rect.top, self.z
+        )
 
     @property
     def rect(self):

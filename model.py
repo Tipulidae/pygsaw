@@ -71,38 +71,37 @@ class Model(EventDispatcher):
             self._merge_pieces(piece, neighbour)
             self.quadtree.insert(piece, piece.bbox)
 
-    def move_piece(self, pid, dx, dy, snap=True):
+    def move_and_snap(self, pid, dx, dy):
         piece = self.pieces[pid]
         self.quadtree.remove(piece, piece.bbox)
         piece.x += dx
         piece.y += dy
 
-        if snap:
-            for neighbour_pid in piece.neighbours:
-                neighbour = self.pieces[neighbour_pid]
-                dist = Point.dist(
-                    Point(piece.x, piece.y),
-                    Point(neighbour.x, neighbour.y)
+        for neighbour_pid in piece.neighbours:
+            neighbour = self.pieces[neighbour_pid]
+            dist = Point.dist(
+                Point(piece.x, piece.y),
+                Point(neighbour.x, neighbour.y)
+            )
+            if dist < self.snap_distance:
+                piece.x = neighbour.x
+                piece.y = neighbour.y
+                neighbour.z = piece.z
+                self.dispatch_event(
+                    'on_snap_piece_to_position',
+                    pid,
+                    piece.x,
+                    piece.y,
+                    piece.z
                 )
-                if dist < self.snap_distance:
-                    piece.x = neighbour.x
-                    piece.y = neighbour.y
-                    neighbour.z = piece.z
-                    self.dispatch_event(
-                        'on_snap_piece_to_position',
-                        pid,
-                        piece.x,
-                        piece.y,
-                        piece.z
-                    )
 
-                    self._merge_pieces(piece, neighbour)
+                self._merge_pieces(piece, neighbour)
 
         self.quadtree.insert(piece, piece.bbox)
 
     def move_pieces(self, pids, dx, dy):
         if len(pids) == 1:
-            self.move_piece(pids[0], dx, dy, snap=True)
+            self.move_and_snap(pids[0], dx, dy)
         else:
             for pid in pids:
                 piece = self.pieces[pid]
