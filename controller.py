@@ -30,11 +30,13 @@ class Controller:
                 piece.height
             )
 
-    def on_mouse_down(self, x, y):
+    def on_mouse_down(self, x, y, is_shift):
         if (piece := self.model.piece_at_coordinate(x, y)) is not None:
             self.view.mouse_down_on_piece(piece.pid)
-        else:
+        elif is_shift:
             self.view.start_selection_box(x, y)
+        else:
+            self.view.drop_everything()
 
     def on_mouse_up(self, x, y):
         pass

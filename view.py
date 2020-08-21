@@ -284,7 +284,8 @@ class View(pyglet.window.EventDispatcher):
         coordinates, which correspond to the "actual" coordinates in the model.
         """
         x, y = self.projection.view_to_clip_coord(x_, y_)
-        self.dispatch_event('on_mouse_down', x, y)
+        self.dispatch_event('on_mouse_down', x, y,
+                            modifiers & pyglet.window.key.MOD_SHIFT)
 
     def on_mouse_release(self, x_, y_, button, modifiers):
         if self.selection_box.is_active:
@@ -310,6 +311,9 @@ class View(pyglet.window.EventDispatcher):
     def start_selection_box(self, x, y):
         # Let's not worry about shift/control to make a bigger selection now.
         self.selection_box.activate(x, y)
+        self.hand.drop_everything()
+
+    def drop_everything(self):
         self.hand.drop_everything()
 
     def mouse_down_on_piece(self, pid):
