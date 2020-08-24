@@ -1,16 +1,10 @@
 from pyglet import graphics, gl
-# import pyglet
-
-#
-# pyglet.options['debug_gl'] = True
-# pyglet.options['debug_gl_shaders'] = True
 
 
 piece_vertex_source = """#version 330 core
     in vec4 position;
     in vec4 colors;
     in vec3 tex_coords;
-    //in float pid;
 
     out vec4 vertex_colors;
     out vec3 texture_coords;
@@ -27,7 +21,6 @@ piece_vertex_source = """#version 330 core
 
     void main()
     {
-        //m_translation[3].xyz = translate[int(pid)];
         m_translation[3].xyz = translate;
         gl_Position = window.projection * window.view * m_translation * position;
 

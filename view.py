@@ -55,7 +55,7 @@ class SpriteGroup(pyglet.graphics.Group):
 
 
 class TranslationGroup(pyglet.graphics.Group):
-    def __init__(self, x, y, z=0, *args, **kwargs):
+    def __init__(self, x=0, y=0, z=0, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.x = x
         self.y = y
@@ -64,24 +64,13 @@ class TranslationGroup(pyglet.graphics.Group):
         self.program = make_piece_shader_program()
 
     def move(self, dx, dy, dz):
-        self.x += dx
-        self.y += dy
-        self.z += dz
-        write_to_uniform(
-            self.program,
-            'translate',
-            (self.x, self.y, self.z)
-        )
+        self.set_position(self.x + dx, self.y + dy, self.z + dz)
 
     def set_position(self, x, y, z):
         self.x = x
         self.y = y
         self.z = z
-        write_to_uniform(
-            self.program,
-            'translate',
-            (self.x, self.y, self.z)
-        )
+        write_to_uniform(self.program, 'translate', (x, y, z))
 
     def set_state(self):
         self.program.use()
@@ -104,7 +93,7 @@ class TranslationGroup(pyglet.graphics.Group):
 class SelectionBoxGroup(pyglet.graphics.Group):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.program = pyglet.shapes._default_program
+        self.program = pyglet.graphics.get_default_shader()
 
     def set_state(self):
         pass
@@ -130,7 +119,7 @@ class OrthographicProjection:
         self.clip_port = self.view_port
         self.zoom_level = zoom
         self._view = None
-        self.program = pyglet.sprite._default_program
+        self.program = pyglet.graphics.get_default_shader()
         self.update()
 
     def view_to_clip_coord(self, x, y):
@@ -195,7 +184,6 @@ class OrthographicProjection:
                 window_block.view[:] = self._view
 
 
-# @register_event_type('on_cheat')
 class Jigsaw(pyglet.window.Window):
     def __init__(self, pan_speed=0.8, **kwargs):
         super().__init__(**kwargs)
@@ -244,7 +232,6 @@ class Jigsaw(pyglet.window.Window):
             self.my_projection.pan(self.pan_speed * dt, 0)
 
     def on_key_press(self, symbol, modifiers):
-        print(f"symbol={symbol}")
         if not self.is_panning and symbol in [
                 pyglet.window.key.W,
                 pyglet.window.key.A,
@@ -267,16 +254,13 @@ class Jigsaw(pyglet.window.Window):
             self.is_panning = False
 
 
-Jigsaw.register_event_type('on_cheat')
-
-
 class View(pyglet.window.EventDispatcher):
     def __init__(self, texture, big_piece_threshold, **window_settings):
         self.window = Jigsaw(**window_settings)
         self.window.push_handlers(self)
         self.projection = self.window.my_projection
         self.texture = texture
-        self.group = TranslationGroup(0, 0)
+        self.group = TranslationGroup()
         self.selection_box = SelectionBox(self.window.batch)
         self.pieces = dict()
         self.hand = Hand(default_group=self.group)
@@ -305,8 +289,8 @@ class View(pyglet.window.EventDispatcher):
         coordinates, which correspond to the "actual" coordinates in the model.
         """
         x, y = self.projection.view_to_clip_coord(x_, y_)
-        self.dispatch_event('on_mouse_down', x, y,
-                            modifiers & pyglet.window.key.MOD_SHIFT)
+        is_shift = modifiers & pyglet.window.key.MOD_SHIFT
+        self.dispatch_event('on_mouse_down', x, y, is_shift)
 
     def on_mouse_release(self, x_, y_, button, modifiers):
         if self.selection_box.is_active:
@@ -356,11 +340,6 @@ class View(pyglet.window.EventDispatcher):
             self.pieces[pid].remember_z_position(z)
 
 
-View.register_event_type('on_mouse_down')
-View.register_event_type('on_mouse_up')
-View.register_event_type('on_selection_box')
-
-
 class Piece:
     def __init__(self, pid, polygon, position, width, height, texture, batch, group):
         self.pid = pid
@@ -368,8 +347,6 @@ class Piece:
         self.batch = batch
         self._group = SpriteGroup(
             self.texture,
-            pyglet.gl.GL_SRC_ALPHA,
-            pyglet.gl.GL_ONE_MINUS_SRC_ALPHA,
             parent=group
         )
         self.translation_groups = []
@@ -412,8 +389,7 @@ class Piece:
             indices,
             ('position3f/static', tuple(original_vertices)),
             ('colors4Bn/static', (255, 255, 255, 255) * n),
-            ('tex_coords3f/static', tuple(tex_coords)),
-            # ('pid1f/static', (self.pid,) * n)
+            ('tex_coords3f/static', tuple(tex_coords))
         )
         self.vertex_list = [vertex_list]
 
@@ -491,7 +467,7 @@ class Piece:
                 self.set_position(0, 0, 0)
                 other.set_position(0, 0, 0)
                 self.remember_position(x, y, z)
-                translation_group = TranslationGroup(x=0, y=0, z=0)
+                translation_group = TranslationGroup()
                 translation_group.set_position(x, y, z)
                 translation_group.size = self.size + other.size
                 self.translation_groups = [translation_group]
@@ -594,7 +570,7 @@ class SelectionBox:
 class Hand(pyglet.window.EventDispatcher):
     def __init__(self, default_group):
         self.default_group = default_group
-        self.translation_group = TranslationGroup(0, 0)
+        self.translation_group = TranslationGroup()
         self.pieces = dict()
         self.step = (0, 0)
         self.program = make_piece_shader_program()
@@ -667,6 +643,12 @@ class Hand(pyglet.window.EventDispatcher):
     def is_empty(self):
         return len(self.pieces) == 0
 
+
+Jigsaw.register_event_type('on_cheat')
+
+View.register_event_type('on_mouse_down')
+View.register_event_type('on_mouse_up')
+View.register_event_type('on_selection_box')
 
 Hand.register_event_type('on_view_pieces_moved')
 Hand.register_event_type('on_view_select_pieces')
