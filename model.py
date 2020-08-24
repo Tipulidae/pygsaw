@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import List, Set, Dict
 
 import vecrec
-import glooey
+# from glooey import register_event_type
 from pyglet.window import EventDispatcher
 from tqdm import tqdm
 from pyqtree import Index as QuadTree
@@ -13,11 +13,9 @@ from pyqtree import Index as QuadTree
 from bezier import Point, make_random_edges, bounding_box, point_in_polygon
 
 
-@glooey.register_event_type(
-    'on_snap_piece_to_position',
-    'on_pieces_merged',
-    'on_z_levels_changed'
-)
+# @register_event_type(
+#
+# )
 class Model(EventDispatcher):
     def __init__(
             self,
@@ -160,6 +158,11 @@ class Model(EventDispatcher):
             key=(lambda p: p.z),
             default=None
         )
+
+
+Model.register_event_type('on_snap_piece_to_position')
+Model.register_event_type('on_pieces_merged')
+Model.register_event_type('on_z_levels_changed')
 
 
 @dataclass

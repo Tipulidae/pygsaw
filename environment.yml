@@ -1,4 +1,4 @@
-name: pygsaw
+name: pygsaw2
 channels:
   - conda-forge
   - defaults
@@ -6,7 +6,9 @@ dependencies:
   - python=3.8.5
   - pip=20.1.1
   - pytest
+  - tqdm
   - pip:
-    - pyglet==1.5.5
-    - glooey==0.3.0
+    - vecrec
+#    - pyglet==1.5.5
+#    - glooey==0.3.0
     - pyqtree==1.0.0

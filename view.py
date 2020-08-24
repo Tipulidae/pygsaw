@@ -2,10 +2,18 @@ import time
 
 import pyglet
 import pyglet.gl as gl
-import glooey
+
+# from glooey import register_event_type
 import vecrec
 
 import earcut
+from my_shaders import load_my_shaders, write_to_uniform
+# from uniform import write_to_uniform
+
+# pyglet.options['debug_gl_shaders'] = True
+# pyglet.options['debug_gl_trace'] = True
+# pyglet.options['debug_gl_trace_args'] = True
+# pyglet.options['debug_graphics_batch'] = True
 
 pyglet.resource.path = ['resources']
 pyglet.resource.reindex()
@@ -16,55 +24,71 @@ MAX_Z_DEPTH = 10000000
 
 
 class SpriteGroup(pyglet.graphics.Group):
-    """Shared sprite rendering group.
-
-    The group is automatically coalesced with other sprite groups sharing the
-    same parent group, texture and blend parameters.
-    """
-
-    def __init__(self, texture, blend_src, blend_dest, parent=None):
-        """Create a sprite group. Adapted from pyglet.sprite
-
-        :Parameters:
-            `texture` : `~pyglet.image.Texture`
-                The (top-level) texture containing the sprite image.
-            `blend_src` : int
-                OpenGL blend source mode; for example,
-                ``GL_SRC_ALPHA``.
-            `blend_dest` : int
-                OpenGL blend destination mode; for example,
-                ``GL_ONE_MINUS_SRC_ALPHA``.
-            `parent` : `~pyglet.graphics.Group`
-                Optional parent group.
-        """
-        super(SpriteGroup, self).__init__(parent)
+    def __init__(
+            self,
+            texture=None,
+            blend_src=gl.GL_SRC_ALPHA,
+            blend_dest=gl.GL_ONE_MINUS_SRC_ALPHA,
+            **kwargs):
+        super().__init__(**kwargs)
         self.texture = texture
         self.blend_src = blend_src
         self.blend_dest = blend_dest
+        self.program = load_my_shaders()
+        print(f"SpriteGroup: {self.program}")
 
     def set_state(self):
-        gl.glEnable(self.texture.target)
+
+        self.program.use()
+        # with self.program.uniform_buffers['TransformBlock'] as block:
+        #     # print(f"setting TransformBlock {self.x, self.y}")
+        #     block.baz[:] = pyglet.math.Mat4((
+        #         1000, 1000, 1000, 1000,
+        #         1000, 1000, 1000, 1000,
+        #         1000, 1000, 1000, 1000,
+        #         1000, 1000, 1000, 1000
+        #     ))
+        gl.glActiveTexture(gl.GL_TEXTURE0)
         gl.glBindTexture(self.texture.target, self.texture.id)
 
-        gl.glPushAttrib(gl.GL_COLOR_BUFFER_BIT | gl.GL_DEPTH_BUFFER_BIT)
-        gl.glEnable(gl.GL_BLEND)
-        gl.glBlendFunc(self.blend_src, self.blend_dest)
 
+            # block.transform[:] = (
+            #     1, 0, 0, self.x,
+            #     0, 1, 0, self.y,
+            #     0, 0, 1, self.z,
+            #     0, 0, 0, 1
+            # )
+
+        # gl.glEnable(gl.GL_BLEND)
+        # gl.glBlendFunc(self.blend_src, self.blend_dest)
+
+        # gl.glActiveTexture(gl.GL_TEXTURE0)
+        # gl.glBindTexture(self.texture.target, self.texture.id)
+        # pass
+        # gl.glEnable(self.texture.target)
+        # gl.glBindTexture(self.texture.target, self.texture.id)
+
+        # gl.glPushAttrib(gl.GL_COLOR_BUFFER_BIT | gl.GL_DEPTH_BUFFER_BIT)
+        # gl.glEnable(gl.GL_BLEND)
+        # gl.glBlendFunc(self.blend_src, self.blend_dest)
+        #
         gl.glEnable(gl.GL_DEPTH_TEST)
         gl.glDepthFunc(gl.GL_LESS)
-
-        gl.glEnable(gl.GL_ALPHA_TEST)
-        gl.glAlphaFunc(gl.GL_GREATER, 0.01)
+        #
+        # gl.glEnable(gl.GL_ALPHA_TEST)
+        # gl.glAlphaFunc(gl.GL_GREATER, 0.01)
 
     def unset_state(self):
-        gl.glPopAttrib()
-        gl.glDisable(self.texture.target)
+        gl.glDisable(gl.GL_BLEND)
+        gl.glBindTexture(self.texture.target, 0)
+        self.program.stop()
 
     def __repr__(self):
-        return '%s(%r)' % (self.__class__.__name__, self.texture)
+        return "{0}({1})".format(self.__class__.__name__, self.texture)
 
     def __eq__(self, other):
         return (other.__class__ is self.__class__ and
+                self.program is other.program and
                 self.parent is other.parent and
                 self.texture.target == other.texture.target and
                 self.texture.id == other.texture.id and
@@ -72,7 +96,7 @@ class SpriteGroup(pyglet.graphics.Group):
                 self.blend_dest == other.blend_dest)
 
     def __hash__(self):
-        return hash((id(self.parent),
+        return hash((id(self.parent), id(self.program),
                      self.texture.id, self.texture.target,
                      self.blend_src, self.blend_dest))
 
@@ -84,26 +108,77 @@ class TranslationGroup(pyglet.graphics.Group):
         self.y = y
         self.z = z
         self.size = 0
+        self.program = load_my_shaders()
+        print(f"TranslationGroup: {self.program}")
+        # with self.program.uniform_buffers['TransformBlock'] as block:
+        #     block.trans[:] = (self.x, self.y, self.z)
+        # with self.program.uniform_buffers['TransformBlock'] as block:
+        #     # print(f"setting TransformBlock {self.x, self.y}")
+        #     block.transform[:] = (
+        #         1, 0, 0, 0,
+        #         0, 1, 0, 0,
+        #         0, 0, 1, 0,
+        #         0, 0, 0, 1
+        #     )
 
     def set_state(self):
-        pyglet.gl.glPushMatrix()
-        pyglet.gl.glTranslatef(self.x, self.y, self.z)
+        self.program.use()
+        # with self.program.uniform_buffers['TransformBlock'] as block:
+        #     block.trans[:] = (self.x, self.y, self.z)
 
     def unset_state(self):
-        pyglet.gl.glPopMatrix()
+        # with self.program.uniform_buffers['TransformBlock'] as block:
+        #     block.trans[:] = (0, 0, 0)
+        self.program.stop()
+        # with self.program.uniform_buffers['TransformBlock'] as block:
+        #     # print(f"setting TransformBlock {self.x, self.y}")
+        #     block.transform[:] = (
+        #         1, 0, 0, 0,
+        #         0, 1, 0, 0,
+        #         0, 0, 1, 0,
+        #         0, 0, 0, 1
+        #     )
+        # self.program.stop()
+        # gl.glPopMatrix()
+
+    def __repr__(self):
+        return "{0}({1}, {2})".format(
+            self.__class__.__name__, self.x, self.y
+        )
+
+    def __eq__(self, other):
+        return (other.__class__ is self.__class__ and
+                self.program is other.program and
+                self.parent is other.parent and
+                self.x == other.x and
+                self.y == other.y and
+                self.z == other.z)
+
+    def __hash__(self):
+        return hash((id(self.parent), id(self.program),
+                     self.x, self.y, self.z))
 
 
 class SelectionBoxGroup(pyglet.graphics.Group):
-    def set_state(self):
-        gl.glEnable(pyglet.gl.GL_LINE_SMOOTH)
-        gl.glLineWidth(3)
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.program = pyglet.shapes._default_program
 
-        gl.glEnable(gl.GL_DEPTH_TEST)
-        gl.glDepthFunc(gl.GL_LESS)
+    def set_state(self):
+        pass
+        # self.program.bind()
+
+        # gl.glEnable(pyglet.gl.GL_LINE_SMOOTH)
+        # gl.glLineWidth(3)
+        #
+        # gl.glEnable(gl.GL_DEPTH_TEST)
+        # gl.glDepthFunc(gl.GL_LESS)
 
     def unset_state(self):
-        gl.glDisable(pyglet.gl.GL_LINE_SMOOTH)
-        gl.glLineWidth(1)
+        pass
+        # self.program.unbind()
+        # gl.glDisable(pyglet.gl.GL_LINE_SMOOTH)
+        # gl.glLineWidth(1)
 
 
 class OrthographicProjection:
@@ -112,6 +187,8 @@ class OrthographicProjection:
             left=0, bottom=0, width=width, height=height)
         self.clip_port = self.view_port
         self.zoom_level = zoom
+        self._view = None
+        self.program = pyglet.sprite._default_program
         self.update()
 
     def view_to_clip_coord(self, x, y):
@@ -157,26 +234,26 @@ class OrthographicProjection:
         self.update()
 
     def update(self):
-        gl.glViewport(
-            self.view_port.left,
-            self.view_port.bottom,
-            self.view_port.width,
-            self.view_port.height
-        )
-        gl.glMatrixMode(gl.GL_PROJECTION)
-        gl.glLoadIdentity()
-        gl.glOrtho(
-            self.clip_port.left,
-            self.clip_port.right,
-            self.clip_port.bottom,
-            self.clip_port.top,
-            -MAX_Z_DEPTH,
-            MAX_Z_DEPTH
-        )
-        gl.glMatrixMode(gl.GL_MODELVIEW)
+        width = max(1, self.view_port.width)
+        height = max(1, self.view_port.height)
+
+        pyglet.gl.glViewport(0, 0, width, height)
+
+        with self.program.uniform_buffers['WindowBlock'] as window_block:
+            window_block.projection[:] = pyglet.math.create_orthogonal(
+                self.clip_port.left,
+                self.clip_port.right,
+                self.clip_port.bottom,
+                self.clip_port.top,
+                -MAX_Z_DEPTH,
+                MAX_Z_DEPTH)
+            if not self._view:
+                # Set view to Identity Matrix
+                self._view = pyglet.math.Mat4()
+                window_block.view[:] = self._view
 
 
-@glooey.register_event_type('on_cheat')
+# @register_event_type('on_cheat')
 class Jigsaw(pyglet.window.Window):
     def __init__(self, pan_speed=0.8, **kwargs):
         super().__init__(**kwargs)
@@ -184,10 +261,10 @@ class Jigsaw(pyglet.window.Window):
         self.fps = pyglet.window.FPSDisplay(window=self)
         self.pan_speed = pan_speed
         self.my_projection = OrthographicProjection(
-            *self.get_viewport_size(),
+            *self.get_framebuffer_size(),
             zoom=1.0
         )
-        self.old_width, self.old_height = self.get_viewport_size()
+        self.old_width, self.old_height = self.get_framebuffer_size()
         self.keys = pyglet.window.key.KeyStateHandler()
         self.push_handlers(self.keys)
         self.is_panning = False
@@ -205,7 +282,7 @@ class Jigsaw(pyglet.window.Window):
     def on_draw(self):
         self.clear()
         self.batch.draw()
-        self.fps.draw()
+        # self.fps.draw()
 
     def on_mouse_scroll(self, x, y, scroll_x, scroll_y):
         if scroll_y > 0:
@@ -225,6 +302,7 @@ class Jigsaw(pyglet.window.Window):
             self.my_projection.pan(self.pan_speed * dt, 0)
 
     def on_key_press(self, symbol, modifiers):
+        print(f"symbol={symbol}")
         if not self.is_panning and symbol in [
                 pyglet.window.key.W,
                 pyglet.window.key.A,
@@ -247,11 +325,14 @@ class Jigsaw(pyglet.window.Window):
             self.is_panning = False
 
 
-@glooey.register_event_type(
-    'on_mouse_down',
-    'on_mouse_up',
-    'on_selection_box'
-)
+Jigsaw.register_event_type('on_cheat')
+
+
+# @register_event_type(
+#     'on_mouse_down',
+#     'on_mouse_up',
+#     'on_selection_box'
+# )
 class View(pyglet.window.EventDispatcher):
     def __init__(self, texture, big_piece_threshold, **window_settings):
         self.window = Jigsaw(**window_settings)
@@ -338,6 +419,11 @@ class View(pyglet.window.EventDispatcher):
             self.pieces[pid].remember_z_position(z)
 
 
+View.register_event_type('on_mouse_down')
+View.register_event_type('on_mouse_up')
+View.register_event_type('on_selection_box')
+
+
 class Piece:
     def __init__(self, pid, polygon, position, width, height, texture, batch, group):
         self.pid = pid
@@ -345,11 +431,12 @@ class Piece:
         self.batch = batch
         self._group = SpriteGroup(
             self.texture,
-            gl.GL_SRC_ALPHA,
-            gl.GL_ONE_MINUS_SRC_ALPHA,
-            group
+            pyglet.gl.GL_SRC_ALPHA,
+            pyglet.gl.GL_ONE_MINUS_SRC_ALPHA,
+            parent=group
         )
         self.translation_groups = []
+        self.program = load_my_shaders()
         self.original_vertices = None
         self.vertex_list = None
         self.size = 1
@@ -381,22 +468,39 @@ class Piece:
 
         indices = earcut.earcut(earcut_input)
 
+        # vertex_list = self.batch.add_indexed(
+        #     len(original_vertices) // 3,
+        #     pyglet.gl.GL_TRIANGLES,
+        #     self.group,
+        #     indices,
+        #     ('v3f', tuple(original_vertices)),
+        #     ('t3f', tuple(tex_coords))
+        # )
+        n = len(original_vertices) // 3
         vertex_list = self.batch.add_indexed(
-            len(original_vertices) // 3,
+            n,
             pyglet.gl.GL_TRIANGLES,
             self.group,
             indices,
-            ('v3f', tuple(original_vertices)),
-            ('t3f', tuple(tex_coords))
+            ('position3f/static', tuple(original_vertices)),
+            ('colors4Bn/static', (255, 255, 255, 255) * n),
+            ('tex_coords3f/static', tuple(tex_coords)),
+            ('pid1f/static', (self.pid,) * n)
         )
         self.vertex_list = [vertex_list]
 
+    def move(self, dx, dy, dz):
+        self._x += dx
+        self._y += dy
+        self._z += dz
+
     def set_position(self, x, y, z):
         self._x, self._y, self._z = x, y, z
-        if self.is_small:
-            self._update_vertices(x, y, z)
-        else:
-            self._update_translation_groups(x, y, z)
+        write_to_uniform('translate', [(self.pid, (x, y, z))])
+        # if self.is_small:
+        #     self._update_vertices(x, y, z)
+        # else:
+        #     self._update_translation_groups(x, y, z)
 
     def _update_vertices(self, x, y, z):
         for vertices, vertex_list in zip(
@@ -411,7 +515,7 @@ class Piece:
                 elif k == 2:
                     new_vertex_list.append(v + z)
 
-            vertex_list.vertices[:] = tuple(new_vertex_list)
+            vertex_list.position[:] = tuple(new_vertex_list)
 
     def _update_translation_groups(self, x, y, z):
         for translation_group in self.translation_groups:
@@ -462,7 +566,11 @@ class Piece:
                 self.set_position(0, 0, 0)
                 other.set_position(0, 0, 0)
                 self.remember_position(x, y, z)
-                translation_group = TranslationGroup(x=x, y=y, z=z)
+                # translation_group = TranslationGroup(x=x, y=y, z=z)
+                translation_group = TranslationGroup(x=0, y=0, z=0)
+                translation_group.x = x
+                translation_group.y = y
+                translation_group.z = z
                 translation_group.size = self.size + other.size
                 self.translation_groups = [translation_group]
                 self.group = other.group = translation_group
@@ -506,15 +614,13 @@ class Piece:
     def group(self, group):
         for vertex_list in self.vertex_list:
             self._group = SpriteGroup(
-                self.texture,
-                gl.GL_SRC_ALPHA,
-                gl.GL_ONE_MINUS_SRC_ALPHA,
-                group
+                texture=self.texture,
+                parent=group
             )
 
             self.batch.migrate(
                 vertex_list,
-                gl.GL_TRIANGLES,
+                pyglet.gl.GL_TRIANGLES,
                 self._group,
                 self.batch
             )
@@ -528,11 +634,11 @@ class SelectionBox:
         self.batch = batch
         self.group = SelectionBoxGroup()
         self.z = MAX_Z_DEPTH
-
+        # self.vertex_list = []
         self.vertex_list = self.batch.add(
-            4, gl.GL_LINE_LOOP, self.group,
-            ('v3f', (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)),
-            ('c3B', (255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 255, 0))
+            4, pyglet.gl.GL_LINE_LOOP, self.group,
+            ('position3f/dynamic', (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)),
+            ('colors4B/static', (255, 0, 0, 0, 0, 255, 0, 0, 0, 0, 255, 0, 255, 255, 0, 0))
         )
 
     def activate(self, x, y):
@@ -540,13 +646,13 @@ class SelectionBox:
         self.is_active = True
 
     def deactivate(self):
-        self.vertex_list.vertices[:] = (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+        self.vertex_list.position[:] = (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
         self.is_active = False
 
     def drag_to(self, x, y):
         self.dest = (x, y)
         rect = self.rect
-        self.vertex_list.vertices[:] = (
+        self.vertex_list.position[:] = (
             rect.left, rect.bottom, self.z,
             rect.right, rect.bottom, self.z,
             rect.right, rect.top, self.z,
@@ -563,16 +669,17 @@ class SelectionBox:
         )
 
 
-@glooey.register_event_type(
-    'on_view_pieces_moved',
-    'on_view_select_pieces'
-)
+# @register_event_type(
+#     'on_view_pieces_moved',
+#     'on_view_select_pieces'
+# )
 class Hand(pyglet.window.EventDispatcher):
     def __init__(self, default_group):
         self.default_group = default_group
         self.translation_group = TranslationGroup(0, 0)
         self.pieces = dict()
         self.step = (0, 0)
+        self.program = load_my_shaders()
 
     def select(self, piece):
         if piece.pid not in self.pieces:
@@ -582,8 +689,8 @@ class Hand(pyglet.window.EventDispatcher):
                 [piece.pid]
             )
             self.pieces = {piece.pid: piece}
-            if piece.is_small:
-                piece.group = self.translation_group
+            # if piece.is_small:
+            #     piece.group = self.translation_group
 
     def select_pieces(self, new_pieces):
         t0 = time.time()
@@ -593,9 +700,9 @@ class Hand(pyglet.window.EventDispatcher):
             'on_view_select_pieces',
             list(self.pieces)
         )
-        for piece in self.pieces.values():
-            if piece.is_small:
-                piece.group = self.translation_group
+        # for piece in self.pieces.values():
+        #     if piece.is_small:
+        #         piece.group = self.translation_group
         t1 = time.time()
         print(f"{len(new_pieces)}: {t1 - t0}")
 
@@ -612,11 +719,11 @@ class Hand(pyglet.window.EventDispatcher):
         )
 
     def drop_everything(self):
-        for pid, piece in self.pieces.items():
-            if piece.is_small:
-                piece.group = self.default_group
-
-            piece.commit_position()
+        # for pid, piece in self.pieces.items():
+        #     if piece.is_small:
+        #         piece.group = self.default_group
+        #
+        #     piece.commit_position()
 
         self.pieces = dict()
         self.translation_group.x = 0
@@ -626,8 +733,14 @@ class Hand(pyglet.window.EventDispatcher):
     def move(self, dx, dy):
         self.translation_group.x += dx
         self.translation_group.y += dy
-        for piece in self.pieces.values():
-            piece.remember_relative_position(dx, dy, 0)
+        data = []
+        for pid, piece in self.pieces.items():
+            piece.move(dx, dy, 0)
+            data.append((pid, (piece.x, piece.y, piece.z)))
+
+        write_to_uniform('translate', data)
+        # for piece in self.pieces.values():
+        #     piece.remember_relative_position(dx, dy, 0)
 
     def snap_piece_to_position(self, piece, x, y, z):
         if piece.pid in self.pieces and piece.is_small:
@@ -641,3 +754,7 @@ class Hand(pyglet.window.EventDispatcher):
     @property
     def is_empty(self):
         return len(self.pieces) == 0
+
+
+Hand.register_event_type('on_view_pieces_moved')
+Hand.register_event_type('on_view_select_pieces')
