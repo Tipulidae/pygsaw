@@ -1,7 +1,8 @@
-from pyglet import graphics, gl
+from pyglet import gl, graphics
+from pyglet.graphics.shader import Shader, ShaderProgram
 
 
-piece_vertex_source = """#version 330 core
+piece_vs = """#version 330 core
     in vec4 position;
     in vec4 colors;
     in vec3 tex_coords;
@@ -29,7 +30,7 @@ piece_vertex_source = """#version 330 core
     }
 """
 
-piece_fragment_source = """#version 330 core
+piece_fs = """#version 330 core
     in vec4 vertex_colors;
     in vec3 texture_coords;
     out vec4 final_colors;
@@ -42,26 +43,55 @@ piece_fragment_source = """#version 330 core
     }
 """
 
+shape_vs = """#version 150 core
+    in vec4 position;
+    in vec4 colors;
+
+    out vec4 vertex_colors;
+
+    uniform WindowBlock
+    {
+        mat4 projection;
+        mat4 view;
+    } window;
+
+    void main()
+    {
+        gl_Position = window.projection * window.view * position;
+        vertex_colors = colors;
+    }
+"""
+
+shape_fs = """#version 150 core
+    in vec4 vertex_colors;
+    out vec4 final_color;
+
+    void main()
+    {
+        final_color = vertex_colors;
+    }
+"""
+
 
 piece_vertex_shader = None
 piece_fragment_shader = None
 
 
-def make_piece_shader_program():
+def make_piece_shader():
     global piece_vertex_shader
     global piece_fragment_shader
     if piece_vertex_shader is None:
-        piece_vertex_shader = graphics.shader.Shader(
-            piece_vertex_source, 'vertex'
-        )
+        piece_vertex_shader = Shader(piece_vs, 'vertex')
     if piece_fragment_shader is None:
-        piece_fragment_shader = graphics.shader.Shader(
-            piece_fragment_source, 'fragment'
-        )
+        piece_fragment_shader = Shader(piece_fs, 'fragment')
 
-    return graphics.shader.ShaderProgram(
-        piece_vertex_shader, piece_fragment_shader
-    )
+    return ShaderProgram(piece_vertex_shader, piece_fragment_shader)
+
+
+def make_shape_shader():
+    vs = Shader(shape_vs, 'vertex')
+    fs = Shader(shape_fs, 'fragment')
+    return ShaderProgram(vs, fs)
 
 
 def write_to_uniform(program, name, data):

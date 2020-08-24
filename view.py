@@ -5,7 +5,7 @@ import pyglet.gl as gl
 import vecrec
 
 import earcut
-from my_shaders import write_to_uniform, make_piece_shader_program
+from shaders import write_to_uniform, make_piece_shader, make_shape_shader
 
 pyglet.resource.path = ['resources']
 pyglet.resource.reindex()
@@ -61,7 +61,7 @@ class TranslationGroup(pyglet.graphics.Group):
         self.y = y
         self.z = z
         self.size = 0
-        self.program = make_piece_shader_program()
+        self.program = make_piece_shader()
 
     def move(self, dx, dy, dz):
         self.set_position(self.x + dx, self.y + dy, self.z + dz)
@@ -93,10 +93,9 @@ class TranslationGroup(pyglet.graphics.Group):
 class SelectionBoxGroup(pyglet.graphics.Group):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.program = pyglet.graphics.get_default_shader()
+        self.program = make_shape_shader()
 
     def set_state(self):
-        pass
         self.program.bind()
 
         gl.glEnable(pyglet.gl.GL_LINE_SMOOTH)
@@ -106,10 +105,9 @@ class SelectionBoxGroup(pyglet.graphics.Group):
         gl.glDepthFunc(gl.GL_LESS)
 
     def unset_state(self):
-        pass
-        self.program.unbind()
-        gl.glDisable(pyglet.gl.GL_LINE_SMOOTH)
         gl.glLineWidth(1)
+        gl.glDisable(pyglet.gl.GL_LINE_SMOOTH)
+        self.program.unbind()
 
 
 class OrthographicProjection:
@@ -573,7 +571,7 @@ class Hand(pyglet.window.EventDispatcher):
         self.translation_group = TranslationGroup()
         self.pieces = dict()
         self.step = (0, 0)
-        self.program = make_piece_shader_program()
+        self.program = make_piece_shader()
 
     def select(self, piece):
         if piece.pid not in self.pieces:
