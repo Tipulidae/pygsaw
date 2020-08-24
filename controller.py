@@ -13,7 +13,7 @@ class Controller:
             big_piece_threshold=100,
             **window_settings):
         # texture = pyglet.resource.image(image_path).get_texture()
-        texture = pyglet.image.load('pygsaw/resources/kitten.png').get_texture()
+        texture = pyglet.image.load(f'pygsaw/resources/{image_path}').get_texture()
         self.model = Model(texture.width, texture.height, num_pieces)
         self.view = View(texture, big_piece_threshold, **window_settings)
         self.view.push_handlers(self)
