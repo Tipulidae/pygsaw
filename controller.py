@@ -3,6 +3,7 @@ from tqdm import tqdm
 
 from model import Model
 from view import View
+from textures import make_normal_map
 
 
 class Controller:
@@ -15,7 +16,19 @@ class Controller:
         # texture = pyglet.resource.image(image_path).get_texture()
         texture = pyglet.image.load(f'pygsaw/resources/{image_path}').get_texture()
         self.model = Model(texture.width, texture.height, num_pieces)
-        self.view = View(texture, big_piece_threshold, **window_settings)
+        normal_map = make_normal_map(
+            self.model.pieces,
+            texture.width,
+            texture.height,
+            self.model.pieces[0].width,
+            self.model.pieces[0].height,
+        )
+        self.view = View(
+            texture,
+            normal_map,
+            big_piece_threshold,
+            **window_settings
+        )
         self.view.push_handlers(self)
         self.view.hand.push_handlers(self)
         self.model.push_handlers(self)

@@ -19,23 +19,28 @@ class SpriteGroup(pyglet.graphics.Group):
     def __init__(
             self,
             texture=None,
+            normal_map=None,
             blend_src=gl.GL_SRC_ALPHA,
             blend_dest=gl.GL_ONE_MINUS_SRC_ALPHA,
             **kwargs):
         super().__init__(**kwargs)
         self.texture = texture
+        self.normal_map = normal_map
         self.blend_src = blend_src
         self.blend_dest = blend_dest
 
     def set_state(self):
         gl.glActiveTexture(gl.GL_TEXTURE0)
         gl.glBindTexture(self.texture.target, self.texture.id)
+        gl.glActiveTexture(gl.GL_TEXTURE1)
+        gl.glBindTexture(self.normal_map.target, self.normal_map.id)
         gl.glEnable(gl.GL_DEPTH_TEST)
         gl.glDepthFunc(gl.GL_LESS)
 
     def unset_state(self):
         gl.glDisable(gl.GL_BLEND)
         gl.glBindTexture(self.texture.target, 0)
+        gl.glBindTexture(self.normal_map.target, 0)
 
     def __repr__(self):
         return f"{self.__class__.__name__}({self.texture})"
@@ -45,12 +50,15 @@ class SpriteGroup(pyglet.graphics.Group):
                 self.parent is other.parent and
                 self.texture.target == other.texture.target and
                 self.texture.id == other.texture.id and
+                self.normal_map.target == other.normal_map.target and
+                self.normal_map.id == other.normal_map.id and
                 self.blend_src == other.blend_src and
                 self.blend_dest == other.blend_dest)
 
     def __hash__(self):
         return hash((id(self.parent),
                      self.texture.id, self.texture.target,
+                     self.normal_map.id, self.normal_map.target,
                      self.blend_src, self.blend_dest))
 
 
@@ -62,6 +70,10 @@ class TranslationGroup(pyglet.graphics.Group):
         self.z = z
         self.size = 0
         self.program = make_piece_shader()
+        self.program.use()
+        self.program['diffuse_map'] = 0
+        self.program['normal_map'] = 1
+        self.program.stop()
 
     def move(self, dx, dy, dz):
         self.set_position(self.x + dx, self.y + dy, self.z + dz)
@@ -253,11 +265,12 @@ class Jigsaw(pyglet.window.Window):
 
 
 class View(pyglet.window.EventDispatcher):
-    def __init__(self, texture, big_piece_threshold, **window_settings):
+    def __init__(self, texture, normal_map, big_piece_threshold, **window_settings):
         self.window = Jigsaw(**window_settings)
         self.window.push_handlers(self)
         self.projection = self.window.my_projection
         self.texture = texture
+        self.normal_map = normal_map
         self.group = TranslationGroup()
         self.selection_box = SelectionBox(self.window.batch)
         self.pieces = dict()
@@ -273,6 +286,7 @@ class View(pyglet.window.EventDispatcher):
             width,
             height,
             self.texture,
+            self.normal_map,
             self.window.batch,
             self.group
         )
@@ -339,12 +353,14 @@ class View(pyglet.window.EventDispatcher):
 
 
 class Piece:
-    def __init__(self, pid, polygon, position, width, height, texture, batch, group):
+    def __init__(self, pid, polygon, position, width, height, texture, normal_map, batch, group):
         self.pid = pid
         self.texture = texture
+        self.normal_map = normal_map
         self.batch = batch
         self._group = SpriteGroup(
             self.texture,
+            self.normal_map,
             parent=group
         )
         self.translation_groups = []
@@ -511,6 +527,7 @@ class Piece:
         for vertex_list in self.vertex_list:
             self._group = SpriteGroup(
                 texture=self.texture,
+                normal_map=self.normal_map,
                 parent=group
             )
 

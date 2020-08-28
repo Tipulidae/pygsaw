@@ -23,7 +23,9 @@ class Model(EventDispatcher):
             image_height,
             num_pieces,
             snap_distance_percent=0.5):
-        self.nx, self.ny, self.num_pieces = create_jigsaw_dimensions(num_pieces)
+        self.nx, self.ny, self.num_pieces = create_jigsaw_dimensions(
+            num_pieces, image_width, image_height
+        )
         self.image_width = image_width
         self.image_height = image_height
         self.snap_distance = snap_distance_percent * image_width / self.nx
@@ -293,9 +295,41 @@ def create_neighbours(pid, n, nx):
     ))
 
 
-def create_jigsaw_dimensions(num_pieces):
-    nx = ny = math.floor(math.sqrt(num_pieces))
-    return nx, ny, num_pieces
+def create_jigsaw_dimensions(n, w, h):
+    """
+    Tries to figure out how many columns and rows there should be in a grid
+    like jigsaw, given that we want n "almost square" pieces, and the image
+    dimensions. Works by defining and evaluating a cost function on a set of
+    numbers that is likely to contain a good approximation.
+    :param n: Number of pieces that we want in the jigsaw
+    :param w: Width of the jigsaw image
+    :param h: Height of the jigsaw image
+    :return: (nx, ny) tuple, where nx * ny is close to n and nx/ny is close to
+    w/h.
+    """
+    r = w / h
+    sqrtn = math.sqrt(n)
+    ny1 = math.floor(sqrtn/r)
+    nx1 = math.floor(sqrtn*r)
+
+    nx_min = min(nx1, math.floor(sqrtn)) - 1
+    nx_max = max(nx1, math.ceil(sqrtn)) + 1
+    ny_min = min(ny1, math.floor(sqrtn)) - 1
+    ny_max = max(ny1, math.ceil(sqrtn)) + 1
+
+    combinations = [
+        (x, y)
+        for x in range(nx_min, nx_max+1)
+        for y in range(ny_min, ny_max+1)
+    ]
+
+    def cost(nxnyn):
+        # I want to penalize wrong number of pieces more than wrong aspect
+        # ratio of pieces
+        nx, ny, _ = nxnyn
+        return abs((r * ny/nx)**2 - 1) + 3 * abs((nx * ny / n) ** 2 - 1)
+
+    return min([(nx, ny, nx * ny) for nx, ny in combinations], key=cost)
 
 
 def point_to_pid(p, nx, width, height):
