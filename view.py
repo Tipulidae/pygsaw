@@ -469,23 +469,23 @@ class Piece:
             tg.size += other.size
             other.group = tg
         elif self.is_small and other.is_big:
+            x, y, z = self.x, self.y, self.z
             self.set_position(0, 0, 0)
             self.translation_groups = other.translation_groups
             tg = max(self.translation_groups, key=(lambda g: g.size))
             tg.size += self.size
             self.group = tg
-            self.remember_position(tg.x, tg.y, tg.z)
+            self.remember_position(x, y, z)
         elif self.is_small and other.is_small:
             if self.size + other.size >= PIECE_THRESHOLD:
                 x, y, z = self.x, self.y, self.z
                 self.set_position(0, 0, 0)
                 other.set_position(0, 0, 0)
-                self.remember_position(x, y, z)
                 translation_group = TranslationGroup()
-                translation_group.set_position(x, y, z)
                 translation_group.size = self.size + other.size
                 self.translation_groups = [translation_group]
                 self.group = other.group = translation_group
+                self.remember_position(x, y, z)
             else:
                 other.set_position(
                     self.x - self.group.parent.x,
@@ -500,7 +500,7 @@ class Piece:
 
     @property
     def is_big(self):
-        return self.size >= PIECE_THRESHOLD
+        return self.size >= PIECE_THRESHOLD or len(self.translation_groups) > 0
 
     @property
     def is_small(self):
