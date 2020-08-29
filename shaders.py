@@ -18,15 +18,20 @@ piece_vs = """#version 330 core
     } window;  
 
     uniform vec3 translate;
+    uniform float hidden;
 
     mat4 m_translation = mat4(1.0);
 
     void main()
     {
-        texture_coords = tex_coords;
-        col = colors;
-        m_translation[3].xyz = translate;
-        gl_Position = window.projection * window.view * m_translation * position;
+        if (hidden > 0.0) {
+            gl_Position = vec4(0, 0, 0, 0);
+        } else {
+            texture_coords = tex_coords;
+            col = colors;
+            m_translation[3].xyz = translate;
+            gl_Position = window.projection * window.view * m_translation * position;
+        }
     }
 """
 

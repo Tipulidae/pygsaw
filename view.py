@@ -5,7 +5,7 @@ import pyglet.gl as gl
 import vecrec
 
 import earcut
-from shaders import write_to_uniform, make_piece_shader, make_shape_shader
+from shaders import make_piece_shader, make_shape_shader
 
 pyglet.resource.path = ['resources']
 pyglet.resource.reindex()
@@ -15,21 +15,35 @@ PIECE_THRESHOLD = 50
 MAX_Z_DEPTH = 10000000
 
 
-class SpriteGroup(pyglet.graphics.Group):
-    def __init__(
-            self,
-            texture=None,
-            normal_map=None,
-            blend_src=gl.GL_SRC_ALPHA,
-            blend_dest=gl.GL_ONE_MINUS_SRC_ALPHA,
-            **kwargs):
-        super().__init__(**kwargs)
+class PieceGroup(pyglet.graphics.Group):
+    def __init__(self, texture, normal_map, x=0, y=0, z=0, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self.texture = texture
         self.normal_map = normal_map
-        self.blend_src = blend_src
-        self.blend_dest = blend_dest
+        self.x = x
+        self.y = y
+        self.z = z
+        self.size = 0
+        self.program = make_piece_shader()
+        self.program.use()
+        self.program['diffuse_map'] = 0
+        self.program['normal_map'] = 1
+
+        self.program.stop()
+
+    def move(self, dx, dy, dz):
+        self.set_position(self.x + dx, self.y + dy, self.z + dz)
+
+    def set_position(self, x, y, z):
+        self.x = x
+        self.y = y
+        self.z = z
+        self.program.use()
+        self.program['translate'] = (x, y, z)
+        self.program.stop()
 
     def set_state(self):
+        self.program.use()
         gl.glActiveTexture(gl.GL_TEXTURE0)
         gl.glBindTexture(self.texture.target, self.texture.id)
         gl.glActiveTexture(gl.GL_TEXTURE1)
@@ -41,53 +55,6 @@ class SpriteGroup(pyglet.graphics.Group):
         gl.glDisable(gl.GL_BLEND)
         gl.glBindTexture(self.texture.target, 0)
         gl.glBindTexture(self.normal_map.target, 0)
-
-    def __repr__(self):
-        return f"{self.__class__.__name__}({self.texture})"
-
-    def __eq__(self, other):
-        return (other.__class__ is self.__class__ and
-                self.parent is other.parent and
-                self.texture.target == other.texture.target and
-                self.texture.id == other.texture.id and
-                self.normal_map.target == other.normal_map.target and
-                self.normal_map.id == other.normal_map.id and
-                self.blend_src == other.blend_src and
-                self.blend_dest == other.blend_dest)
-
-    def __hash__(self):
-        return hash((id(self.parent),
-                     self.texture.id, self.texture.target,
-                     self.normal_map.id, self.normal_map.target,
-                     self.blend_src, self.blend_dest))
-
-
-class TranslationGroup(pyglet.graphics.Group):
-    def __init__(self, x=0, y=0, z=0, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.x = x
-        self.y = y
-        self.z = z
-        self.size = 0
-        self.program = make_piece_shader()
-        self.program.use()
-        self.program['diffuse_map'] = 0
-        self.program['normal_map'] = 1
-        self.program.stop()
-
-    def move(self, dx, dy, dz):
-        self.set_position(self.x + dx, self.y + dy, self.z + dz)
-
-    def set_position(self, x, y, z):
-        self.x = x
-        self.y = y
-        self.z = z
-        write_to_uniform(self.program, 'translate', (x, y, z))
-
-    def set_state(self):
-        self.program.use()
-
-    def unset_state(self):
         self.program.stop()
 
     def __repr__(self):
@@ -253,6 +220,9 @@ class Jigsaw(pyglet.window.Window):
             self.dispatch_event('on_cheat', 1)
         if symbol == pyglet.window.key.X:
             self.dispatch_event('on_cheat', 100)
+        if modifiers & pyglet.window.key.MOD_CTRL:
+            if symbol == pyglet.window.key._1:
+                print('Ctrl+1')
 
     def on_key_release(self, symbol, modifiers):
         if self.is_panning and not (
@@ -271,7 +241,7 @@ class View(pyglet.window.EventDispatcher):
         self.projection = self.window.my_projection
         self.texture = texture
         self.normal_map = normal_map
-        self.group = TranslationGroup()
+        self.group = PieceGroup(texture, normal_map)
         self.selection_box = SelectionBox(self.window.batch)
         self.pieces = dict()
         self.hand = Hand(default_group=self.group)
@@ -290,7 +260,7 @@ class View(pyglet.window.EventDispatcher):
             self.window.batch,
             self.group
         )
-        self.hand.translation_group.z += 1
+        self.hand.held_group.z += 1
 
     def on_mouse_press(self, x_, y_, button, modifiers):
         """
@@ -347,7 +317,7 @@ class View(pyglet.window.EventDispatcher):
         self.pieces.pop(pid2)
 
     def remember_new_z_levels(self, msg):
-        self.hand.translation_group.move(0, 0, len(msg))
+        self.hand.held_group.move(0, 0, len(msg))
         for z, pid in msg:
             self.pieces[pid].remember_z_position(z)
 
@@ -358,12 +328,13 @@ class Piece:
         self.texture = texture
         self.normal_map = normal_map
         self.batch = batch
-        self._group = SpriteGroup(
-            self.texture,
-            self.normal_map,
-            parent=group
-        )
-        self.translation_groups = []
+        self._group = group
+        # self._group = SpriteGroup(
+        #     self.texture,
+        #     self.normal_map,
+        #     parent=group
+        # )
+        self.groups = []
         self.original_vertices = None
         self.vertex_list = None
         self.size = 1
@@ -417,7 +388,7 @@ class Piece:
         if self.is_small:
             self._update_vertices(x, y, z)
         else:
-            self._update_translation_groups(x, y, z)
+            self._update_groups(x, y, z)
 
     def _update_vertices(self, x, y, z):
         for vertices, vertex_list in zip(
@@ -434,9 +405,9 @@ class Piece:
 
             vertex_list.position[:] = tuple(new_vertex_list)
 
-    def _update_translation_groups(self, x, y, z):
-        for translation_group in self.translation_groups:
-            translation_group.set_position(x, y, z)
+    def _update_groups(self, x, y, z):
+        for group in self.groups:
+            group.set_position(x, y, z)
 
     def remember_position(self, x, y, z):
         self._x, self._y, self._z = x, y, z
@@ -457,40 +428,40 @@ class Piece:
         if self.is_small:
             self._update_vertices(self._x, self._y, self._z)
         else:
-            self._update_translation_groups(self._x, self._y, self._z)
+            self._update_groups(self._x, self._y, self._z)
 
     def merge(self, other):
         if self.is_big and other.is_big:
-            self.translation_groups += other.translation_groups
+            self.groups += other.groups
             self.commit_position()
         elif self.is_big and other.is_small:
             other.set_position(0, 0, 0)
-            tg = max(self.translation_groups, key=(lambda g: g.size))
-            tg.size += other.size
-            other.group = tg
+            g = max(self.groups, key=(lambda group: group.size))
+            g.size += other.size
+            other.group = g
         elif self.is_small and other.is_big:
             x, y, z = self.x, self.y, self.z
             self.set_position(0, 0, 0)
-            self.translation_groups = other.translation_groups
-            tg = max(self.translation_groups, key=(lambda g: g.size))
-            tg.size += self.size
-            self.group = tg
+            self.groups = other.groups
+            g = max(self.groups, key=(lambda group: group.size))
+            g.size += self.size
+            self.group = g
             self.remember_position(x, y, z)
         elif self.is_small and other.is_small:
             if self.size + other.size >= PIECE_THRESHOLD:
                 x, y, z = self.x, self.y, self.z
                 self.set_position(0, 0, 0)
                 other.set_position(0, 0, 0)
-                translation_group = TranslationGroup()
-                translation_group.size = self.size + other.size
-                self.translation_groups = [translation_group]
-                self.group = other.group = translation_group
+                group = PieceGroup(self.texture, self.normal_map)
+                group.size = self.size + other.size
+                self.groups = [group]
+                self.group = other.group = group
                 self.remember_position(x, y, z)
             else:
                 other.set_position(
-                    self.x - self.group.parent.x,
-                    self.y - self.group.parent.y,
-                    self.z - self.group.parent.z
+                    self.x - self.group.x,
+                    self.y - self.group.y,
+                    self.z - self.group.z
                 )
                 other.group = self.group
 
@@ -500,7 +471,7 @@ class Piece:
 
     @property
     def is_big(self):
-        return self.size >= PIECE_THRESHOLD or len(self.translation_groups) > 0
+        return self.size >= PIECE_THRESHOLD or len(self.groups) > 0
 
     @property
     def is_small(self):
@@ -525,11 +496,7 @@ class Piece:
     @group.setter
     def group(self, group):
         for vertex_list in self.vertex_list:
-            self._group = SpriteGroup(
-                texture=self.texture,
-                normal_map=self.normal_map,
-                parent=group
-            )
+            self._group = group
 
             self.batch.migrate(
                 vertex_list,
@@ -585,10 +552,9 @@ class SelectionBox:
 class Hand(pyglet.window.EventDispatcher):
     def __init__(self, default_group):
         self.default_group = default_group
-        self.translation_group = TranslationGroup()
+        self.held_group = PieceGroup(default_group.texture, default_group.normal_map)
         self.pieces = dict()
         self.step = (0, 0)
-        self.program = make_piece_shader()
 
     def select(self, piece):
         if piece.pid not in self.pieces:
@@ -599,7 +565,7 @@ class Hand(pyglet.window.EventDispatcher):
             )
             self.pieces = {piece.pid: piece}
             if piece.is_small:
-                piece.group = self.translation_group
+                piece.group = self.held_group
 
     def select_pieces(self, new_pieces):
         t0 = time.time()
@@ -611,7 +577,7 @@ class Hand(pyglet.window.EventDispatcher):
         )
         for piece in self.pieces.values():
             if piece.is_small:
-                piece.group = self.translation_group
+                piece.group = self.held_group
         t1 = time.time()
         print(f"{len(new_pieces)}: {t1 - t0}")
 
@@ -619,12 +585,12 @@ class Hand(pyglet.window.EventDispatcher):
         self.dispatch_event(
             'on_view_pieces_moved',
             list(self.pieces),
-            self.translation_group.x - self.step[0],
-            self.translation_group.y - self.step[1]
+            self.held_group.x - self.step[0],
+            self.held_group.y - self.step[1]
         )
         self.step = (
-            self.translation_group.x,
-            self.translation_group.y
+            self.held_group.x,
+            self.held_group.y
         )
 
     def drop_everything(self):
@@ -635,17 +601,17 @@ class Hand(pyglet.window.EventDispatcher):
             piece.commit_position()
 
         self.pieces = dict()
-        self.translation_group.set_position(0, 0, self.translation_group.z)
+        self.held_group.set_position(0, 0, self.held_group.z)
         self.step = 0, 0
 
     def move(self, dx, dy):
-        self.translation_group.move(dx, dy, 0)
+        self.held_group.move(dx, dy, 0)
         for piece in self.pieces.values():
             piece.remember_relative_position(dx, dy, 0)
 
     def snap_piece_to_position(self, piece, x, y, z):
         if piece.pid in self.pieces and piece.is_small:
-            self.translation_group.move(
+            self.held_group.move(
                 x - piece.x,
                 y - piece.y,
                 z - piece.z
