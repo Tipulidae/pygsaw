@@ -124,6 +124,7 @@ class Model(EventDispatcher):
             self.current_max_z_level + len(pids)
         ))
         self.current_max_z_level += len(pids)
+        # print(f"model.max_z_level = {self.current_max_z_level}")
 
         sorted_pieces = sorted(
             [self.pieces[pid] for pid in pids],

@@ -12,7 +12,7 @@ pyglet.resource.reindex()
 
 GROUP_COUNT = 2
 PIECE_THRESHOLD = 50
-MAX_Z_DEPTH = 10000000
+MAX_Z_DEPTH = 5000000
 
 
 class PieceGroupFactory:
@@ -37,6 +37,13 @@ class PieceGroupFactory:
 
         group.tray = tray
         PieceGroupFactory.big_groups[tray].add(group)
+
+    @staticmethod
+    def new_big_group(tray):
+        dg = PieceGroupFactory.default_groups[tray]
+        group = PieceGroup(dg.texture, dg.normal_map, tray=tray)
+        PieceGroupFactory.big_groups[tray].add(group)
+        return group
 
 
 class PieceGroup(pyglet.graphics.Group):
@@ -266,7 +273,6 @@ class View(pyglet.window.EventDispatcher):
         self.projection = self.window.my_projection
         self.texture = texture
         self.normal_map = normal_map
-        # self.group = PieceGroup(texture, normal_map)
         PieceGroupFactory.default_groups = {
             tray: PieceGroup(texture, normal_map, tray=tray)
             for tray in range(10)
@@ -288,7 +294,7 @@ class View(pyglet.window.EventDispatcher):
             self.normal_map,
             self.window.batch
         )
-        self.hand.held_group.z += 1
+        self.hand.group.z += 1
 
     def on_mouse_press(self, x_, y_, button, modifiers):
         """
@@ -355,14 +361,15 @@ class View(pyglet.window.EventDispatcher):
         self.hand.select_pieces({pid: self.pieces[pid] for pid in pids})
 
     def snap_piece_to_position(self, pid, x, y, z):
-        self.hand.snap_piece_to_position(self.pieces[pid], x, y, z)
+        self.hand.drop_everything()
+        self.pieces[pid].set_position(x, y, z)
 
     def merge_pieces(self, pid1, pid2):
         self.pieces[pid1].merge(self.pieces[pid2])
         self.pieces.pop(pid2)
 
     def remember_new_z_levels(self, msg):
-        self.hand.held_group.move(0, 0, len(msg))
+        self.hand.group.move(0, 0, len(msg))
         for z, pid in msg:
             self.pieces[pid].remember_z_position(z)
 
@@ -486,9 +493,9 @@ class Piece:
 
     def merge(self, other):
         if self.is_big and other.is_big:
-            new_visibility_group = self.groups[0].tray
+            tray = self.groups[0].tray
             self.groups += other.groups
-            self.set_default_tray(new_visibility_group)
+            self.set_default_tray(tray)
             self.commit_position()
         elif self.is_big and other.is_small:
             other.set_position(0, 0, 0)
@@ -497,34 +504,27 @@ class Piece:
             other.group = g
         elif self.is_small and other.is_big:
             x, y, z = self.x, self.y, self.z
-            new_visibility_group = self.default_group.tray
+            tray = self.default_group.tray
             self.set_position(0, 0, 0)
             self.groups = other.groups
             g = max(self.groups, key=(lambda group: group.size))
             g.size += self.size
             self.group = g
             self.remember_position(x, y, z)
-            self.set_default_tray(new_visibility_group)
+            self.set_default_tray(tray)
         elif self.is_small and other.is_small:
             if self.size + other.size >= PIECE_THRESHOLD:
                 x, y, z = self.x, self.y, self.z
                 self.set_position(0, 0, 0)
                 other.set_position(0, 0, 0)
                 tray = self.default_group.tray
-                group = PieceGroup(self.texture, self.normal_map, tray=tray)
-                PieceGroupFactory.big_groups[tray].add(group)
-                # group = PieceGroupFactory.get_piece_group(visibility_group)
-                # group = PieceGroup(self.texture, self.normal_map)
+                group = PieceGroupFactory.new_big_group(tray)
                 group.size = self.size + other.size
                 self.groups = [group]
                 self.group = other.group = group
                 self.remember_position(x, y, z)
             else:
-                other.set_position(
-                    self.x - self.group.x,
-                    self.y - self.group.y,
-                    self.z - self.group.z
-                )
+                other.set_position(self.x, self.y, self.z)
                 other.group = self.group
 
         self.original_vertices += other.original_vertices
@@ -613,7 +613,7 @@ class SelectionBox:
 
 class Hand(pyglet.window.EventDispatcher):
     def __init__(self, default_group):
-        self.held_group = PieceGroup(
+        self.group = PieceGroup(
             default_group.texture,
             default_group.normal_map)
         self.pieces = dict()
@@ -628,7 +628,7 @@ class Hand(pyglet.window.EventDispatcher):
             )
             self.pieces = {piece.pid: piece}
             if piece.is_small:
-                piece.group = self.held_group
+                piece.group = self.group
 
     def select_pieces(self, new_pieces):
         t0 = time.time()
@@ -640,7 +640,7 @@ class Hand(pyglet.window.EventDispatcher):
         )
         for piece in self.pieces.values():
             if piece.is_small:
-                piece.group = self.held_group
+                piece.group = self.group
         t1 = time.time()
         print(f"{len(new_pieces)}: {t1 - t0}")
 
@@ -648,12 +648,12 @@ class Hand(pyglet.window.EventDispatcher):
         self.dispatch_event(
             'on_view_pieces_moved',
             list(self.pieces),
-            self.held_group.x - self.step[0],
-            self.held_group.y - self.step[1]
+            self.group.x - self.step[0],
+            self.group.y - self.step[1]
         )
         self.step = (
-            self.held_group.x,
-            self.held_group.y
+            self.group.x,
+            self.group.y
         )
 
     def drop_everything(self):
@@ -664,7 +664,7 @@ class Hand(pyglet.window.EventDispatcher):
             piece.commit_position()
 
         self.pieces = dict()
-        self.held_group.set_position(0, 0, self.held_group.z)
+        self.group.set_position(0, 0, self.group.z)
         self.step = 0, 0
 
     def drop_pieces(self, pids):
@@ -676,8 +676,8 @@ class Hand(pyglet.window.EventDispatcher):
             self.dispatch_event(
                 'on_view_pieces_moved',
                 list(pids_in_hand),
-                self.held_group.x - self.step[0],
-                self.held_group.y - self.step[1]
+                self.group.x - self.step[0],
+                self.group.y - self.step[1]
             )
             for pid in pids_in_hand:
                 piece = self.pieces[pid]
@@ -688,13 +688,13 @@ class Hand(pyglet.window.EventDispatcher):
                 self.pieces.pop(pid)
 
     def move(self, dx, dy):
-        self.held_group.move(dx, dy, 0)
+        self.group.move(dx, dy, 0)
         for piece in self.pieces.values():
             piece.remember_relative_position(dx, dy, 0)
 
     def snap_piece_to_position(self, piece, x, y, z):
         if piece.pid in self.pieces and piece.is_small:
-            self.held_group.move(
+            self.group.move(
                 x - piece.x,
                 y - piece.y,
                 z - piece.z
