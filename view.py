@@ -266,6 +266,37 @@ class Jigsaw(pyglet.window.Window):
             self.is_panning = False
 
 
+class NumberKeys:
+    def __init__(self):
+        self.pressed = {key: False for key in range(
+            pyglet.window.key._0, pyglet.window.key._9 + 1)}
+        self.is_shift = False
+        self.last_pressed = 0
+
+    def press(self, key):
+        if key in self.pressed:
+            self.pressed[key] = True
+            self.last_pressed = key - pyglet.window.key._0
+        elif key == pyglet.window.key.LSHIFT:
+            self.is_shift = True
+
+    def release(self, key):
+        if key in self.pressed:
+            self.pressed[key] = False
+            self.last_pressed = key - pyglet.window.key._0
+        elif key == pyglet.window.key.LSHIFT:
+            self.is_shift = False
+
+    @property
+    def is_active(self):
+        if self.is_shift:
+            return False
+        for values in self.pressed.values():
+            if values:
+                return True
+        return False
+
+
 class View(pyglet.window.EventDispatcher):
     def __init__(self, texture, normal_map, big_piece_threshold, **window_settings):
         self.window = Jigsaw(**window_settings)
@@ -280,6 +311,7 @@ class View(pyglet.window.EventDispatcher):
         self.selection_box = SelectionBox(self.window.batch)
         self.pieces = dict()
         self.hand = Hand(default_group=PieceGroup(texture, normal_map))
+        self.number_keys = NumberKeys()
         global PIECE_THRESHOLD
         PIECE_THRESHOLD = big_piece_threshold
 
@@ -330,6 +362,7 @@ class View(pyglet.window.EventDispatcher):
             self.hand.move(dx, dy)
 
     def on_key_press(self, symbol, modifiers):
+        self.number_keys.press(symbol)
         if symbol == pyglet.window.key.C:
             self.dispatch_event('on_cheat', 1)
         if symbol == pyglet.window.key.X:
@@ -338,13 +371,20 @@ class View(pyglet.window.EventDispatcher):
         if pyglet.window.key._0 <= symbol <= pyglet.window.key._9:
             tray = symbol - pyglet.window.key._0
             if modifiers & pyglet.window.key.MOD_CTRL:
-                pids = list(self.hand.pieces)
-                for pid in pids:
-                    self.pieces[pid].set_default_tray(tray)
-
-                self.dispatch_event('on_move_pieces_to_tray', tray, pids)
-            else:
                 self.dispatch_event('on_toggle_visibility', tray)
+            else:
+                self._move_pieces_to_tray(list(self.hand.pieces), tray)
+
+    def on_key_release(self, symbol, modifiers):
+        self.number_keys.release(symbol)
+
+    def _move_pieces_to_tray(self, pids, tray):
+        self.dispatch_event('on_move_pieces_to_tray', tray, pids)
+        for pid in pids:
+            piece = self.pieces[pid]
+            piece.set_default_tray(tray)
+            if piece.is_small:
+                piece.group = piece.default_group
 
     def start_selection_box(self, x, y):
         # Let's not worry about shift/control to make a bigger selection now.
@@ -355,7 +395,13 @@ class View(pyglet.window.EventDispatcher):
         self.hand.drop_everything()
 
     def mouse_down_on_piece(self, pid):
-        self.hand.select(self.pieces[pid])
+        if self.number_keys.is_active:
+            self._move_pieces_to_tray(
+                pids=[pid],
+                tray=self.number_keys.last_pressed
+            )
+        else:
+            self.hand.select(self.pieces[pid])
 
     def select_pieces(self, pids):
         self.hand.select_pieces({pid: self.pieces[pid] for pid in pids})
