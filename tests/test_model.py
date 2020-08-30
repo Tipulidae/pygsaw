@@ -41,14 +41,16 @@ def test_filter_visible_returns_only_visible_pids():
 
 
 def test_filter_visible_returns_nothing_when_there_are_no_visible_pids():
-    # TODO: refactor this cause I don't really understand it!
-    tray = Tray(num_pids=3, num_trays=3)
-    tray.trays[0] = {1, 2, 3}
-    tray.trays[1] = {4, 5, 6}
-    tray.trays[2] = {7, 8, 9}
-    tray.visible_trays = {1, 2}
+    tray = Tray(num_pids=9, num_trays=3)
+    tray.move_pids_to_tray([0, 1, 2], 0)
+    tray.move_pids_to_tray([3, 4, 5], 1)
+    tray.move_pids_to_tray([6, 7, 8], 2)
+    tray.toggle_visibility(0)
+    tray.toggle_visibility(2)
 
-    assert list(tray.filter_visible([1, 10])) == []
+    assert list(tray.filter_visible([0, 1, 2, 6, 7, 8])) == []
+    assert list(tray.filter_visible([])) == []
+    assert list(tray.filter_visible([1000, 1001, 1002, -100])) == []
 
 
 def test_tray_zero_is_default():
