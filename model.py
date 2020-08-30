@@ -35,6 +35,7 @@ class Model(EventDispatcher):
             self.nx,
             self.ny
         )
+        self.trays = Tray(num_pids=self.num_pieces)
         self.quadtree = QuadTree(bbox=(-100000, -100000, 100000, 100000))
         for piece in tqdm(self.pieces.values(), desc="Building quad-tree"):
             self.quadtree.insert(piece, piece.bbox)
@@ -45,11 +46,15 @@ class Model(EventDispatcher):
         return self._top_piece_at_location(x, y)
 
     def piece_ids_in_rect(self, rect):
-        return list(map(
-            lambda piece: piece.pid,
-            self.quadtree.intersect(
-                bbox=(rect.left, rect.bottom, rect.right, rect.top)
-            )
+        def to_pid(piece):
+            return piece.pid
+
+        pieces_in_rect = self.quadtree.intersect(
+            bbox=(rect.left, rect.bottom, rect.right, rect.top)
+        )
+
+        return list(self.trays.filter_visible(
+            map(to_pid, pieces_in_rect)
         ))
 
     def merge_random_pieces(self, n):
@@ -78,6 +83,9 @@ class Model(EventDispatcher):
         piece.y += dy
 
         for neighbour_pid in piece.neighbours:
+            if not self.trays.is_visible(neighbour_pid):
+                continue
+
             neighbour = self.pieces[neighbour_pid]
             dist = Point.dist(
                 Point(piece.x, piece.y),
@@ -132,6 +140,17 @@ class Model(EventDispatcher):
             msg
         )
 
+    def move_pieces_to_tray(self, tray, pids):
+        self.trays.move_pids_to_tray(tray=tray, pids=pids)
+
+    def get_hidden_pieces(self):
+        return self.trays.hidden_pieces
+
+    def toggle_visibility(self, group):
+        self.trays.toggle_visibility(group)
+        is_visible = group in self.trays.visible_trays
+        self.dispatch_event('on_set_visibility', group, is_visible)
+
     def _merge_pieces(self, p1, p2):
         # Merges p2 into p1
         p1.merge(p2)
@@ -143,6 +162,7 @@ class Model(EventDispatcher):
             neighbour.neighbours.add(p1.pid)
 
         self.quadtree.remove(p2, p2.bbox)
+        self.trays.merge_pids(p1.pid, p2.pid)
         self.dispatch_event(
             'on_pieces_merged',
             p1.pid,
@@ -151,7 +171,7 @@ class Model(EventDispatcher):
 
     def _pieces_at_location(self, x, y):
         for piece in self.quadtree.intersect(bbox=(x, y, x, y)):
-            if piece.contains(Point(x, y), self.nx):
+            if self.trays.is_visible(piece.pid) and piece.contains(Point(x, y), self.nx):
                 yield piece
 
     def _top_piece_at_location(self, x, y):
@@ -165,6 +185,7 @@ class Model(EventDispatcher):
 Model.register_event_type('on_snap_piece_to_position')
 Model.register_event_type('on_pieces_merged')
 Model.register_event_type('on_z_levels_changed')
+Model.register_event_type('on_set_visibility')
 
 
 @dataclass
@@ -233,6 +254,50 @@ class Piece:
             return point_in_polygon(point, self.polygon[neighbour])
         else:
             return False
+
+
+class Tray:
+    def __init__(self, num_pids, num_trays=10):
+        self.trays = {tray: set() for tray in range(num_trays)}
+        self.trays[0] = set(range(num_pids))
+        self.visible_trays = set(range(num_trays))
+        self.pid_to_tray = {pid: 0 for pid in range(num_pids)}
+
+    def is_visible(self, pid):
+        return (
+            pid in self.pid_to_tray and
+            self.pid_to_tray[pid] in self.visible_trays
+        )
+
+    def filter_visible(self, pids):
+        for pid in pids:
+            if self.is_visible(pid):
+                yield pid
+
+    def move_pids_to_tray(self, pids, tray):
+        for pid in pids:
+            old_tray = self.pid_to_tray[pid]
+            self.pid_to_tray[pid] = tray
+            self.trays[old_tray].remove(pid)
+            self.trays[tray].add(pid)
+
+    def merge_pids(self, _, pid2):
+        self.trays[self.pid_to_tray[pid2]].remove(pid2)
+        self.pid_to_tray.pop(pid2)
+
+    def toggle_visibility(self, tray):
+        if tray in self.visible_trays:
+            self.visible_trays.remove(tray)
+        else:
+            self.visible_trays.add(tray)
+
+    @property
+    def hidden_pieces(self):
+        hidden = tuple(
+            pieces for tray, pieces in self.trays.items()
+            if tray not in self.visible_trays
+        )
+        return set().union(*hidden)
 
 
 def make_jigsaw_cut(image_width, image_height, nx, ny):

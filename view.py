@@ -15,11 +15,36 @@ PIECE_THRESHOLD = 50
 MAX_Z_DEPTH = 10000000
 
 
+class PieceGroupFactory:
+    default_groups = dict()
+    big_groups = {tray: set() for tray in range(10)}
+
+    @staticmethod
+    def get_piece_group(tray):
+        return PieceGroupFactory.default_groups[tray]
+
+    @staticmethod
+    def toggle_visibility(tray, is_visible):
+        PieceGroupFactory.default_groups[tray].set_visibility(is_visible)
+        for group in PieceGroupFactory.big_groups[tray]:
+            group.set_visibility(is_visible)
+
+    @staticmethod
+    def move_to_group(group, tray):
+        old_group = group.tray
+        if group in PieceGroupFactory.big_groups[old_group]:
+            PieceGroupFactory.big_groups[old_group].remove(group)
+
+        group.tray = tray
+        PieceGroupFactory.big_groups[tray].add(group)
+
+
 class PieceGroup(pyglet.graphics.Group):
-    def __init__(self, texture, normal_map, x=0, y=0, z=0, *args, **kwargs):
+    def __init__(self, texture, normal_map, tray=0, x=0, y=0, z=0, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.texture = texture
         self.normal_map = normal_map
+        self.tray = tray
         self.x = x
         self.y = y
         self.z = z
@@ -28,7 +53,6 @@ class PieceGroup(pyglet.graphics.Group):
         self.program.use()
         self.program['diffuse_map'] = 0
         self.program['normal_map'] = 1
-
         self.program.stop()
 
     def move(self, dx, dy, dz):
@@ -40,6 +64,14 @@ class PieceGroup(pyglet.graphics.Group):
         self.z = z
         self.program.use()
         self.program['translate'] = (x, y, z)
+        self.program.stop()
+
+    def set_visibility(self, is_visible):
+        self.program.use()
+        if is_visible:
+            self.program['hidden'] = 0.0
+        else:
+            self.program['hidden'] = 1.0
         self.program.stop()
 
     def set_state(self):
@@ -216,13 +248,6 @@ class Jigsaw(pyglet.window.Window):
                 pyglet.window.key.D]:
             pyglet.clock.schedule_interval(self.update, 1/120)
             self.is_panning = True
-        if symbol == pyglet.window.key.C:
-            self.dispatch_event('on_cheat', 1)
-        if symbol == pyglet.window.key.X:
-            self.dispatch_event('on_cheat', 100)
-        if modifiers & pyglet.window.key.MOD_CTRL:
-            if symbol == pyglet.window.key._1:
-                print('Ctrl+1')
 
     def on_key_release(self, symbol, modifiers):
         if self.is_panning and not (
@@ -241,10 +266,14 @@ class View(pyglet.window.EventDispatcher):
         self.projection = self.window.my_projection
         self.texture = texture
         self.normal_map = normal_map
-        self.group = PieceGroup(texture, normal_map)
+        # self.group = PieceGroup(texture, normal_map)
+        PieceGroupFactory.default_groups = {
+            tray: PieceGroup(texture, normal_map, tray=tray)
+            for tray in range(10)
+        }
         self.selection_box = SelectionBox(self.window.batch)
         self.pieces = dict()
-        self.hand = Hand(default_group=self.group)
+        self.hand = Hand(default_group=PieceGroup(texture, normal_map))
         global PIECE_THRESHOLD
         PIECE_THRESHOLD = big_piece_threshold
 
@@ -257,8 +286,7 @@ class View(pyglet.window.EventDispatcher):
             height,
             self.texture,
             self.normal_map,
-            self.window.batch,
-            self.group
+            self.window.batch
         )
         self.hand.held_group.z += 1
 
@@ -295,6 +323,23 @@ class View(pyglet.window.EventDispatcher):
             dy = dy_ / self.projection.zoom_level
             self.hand.move(dx, dy)
 
+    def on_key_press(self, symbol, modifiers):
+        if symbol == pyglet.window.key.C:
+            self.dispatch_event('on_cheat', 1)
+        if symbol == pyglet.window.key.X:
+            self.dispatch_event('on_cheat', 100)
+
+        if pyglet.window.key._0 <= symbol <= pyglet.window.key._9:
+            tray = symbol - pyglet.window.key._0
+            if modifiers & pyglet.window.key.MOD_CTRL:
+                pids = list(self.hand.pieces)
+                for pid in pids:
+                    self.pieces[pid].set_default_tray(tray)
+
+                self.dispatch_event('on_move_pieces_to_tray', tray, pids)
+            else:
+                self.dispatch_event('on_toggle_visibility', tray)
+
     def start_selection_box(self, x, y):
         # Let's not worry about shift/control to make a bigger selection now.
         self.selection_box.activate(x, y)
@@ -321,19 +366,21 @@ class View(pyglet.window.EventDispatcher):
         for z, pid in msg:
             self.pieces[pid].remember_z_position(z)
 
+    def drop_specific_pieces_from_hand(self, pids):
+        self.hand.drop_pieces(pids)
+
+    def set_visibility(self, tray, is_visible):
+        PieceGroupFactory.toggle_visibility(tray, is_visible)
+
 
 class Piece:
-    def __init__(self, pid, polygon, position, width, height, texture, normal_map, batch, group):
+    def __init__(self, pid, polygon, position, width, height, texture, normal_map, batch):
         self.pid = pid
         self.texture = texture
         self.normal_map = normal_map
         self.batch = batch
-        self._group = group
-        # self._group = SpriteGroup(
-        #     self.texture,
-        #     self.normal_map,
-        #     parent=group
-        # )
+        self.default_group = PieceGroupFactory.get_piece_group(0)
+        self._group = self.default_group
         self.groups = []
         self.original_vertices = None
         self.vertex_list = None
@@ -409,6 +456,13 @@ class Piece:
         for group in self.groups:
             group.set_position(x, y, z)
 
+    def set_default_tray(self, tray):
+        if self.is_small:
+            self.default_group = PieceGroupFactory.get_piece_group(tray)
+        else:
+            for group in self.groups:
+                PieceGroupFactory.move_to_group(group, tray)
+
     def remember_position(self, x, y, z):
         self._x, self._y, self._z = x, y, z
         if self.is_big:
@@ -432,7 +486,9 @@ class Piece:
 
     def merge(self, other):
         if self.is_big and other.is_big:
+            new_visibility_group = self.groups[0].tray
             self.groups += other.groups
+            self.set_default_tray(new_visibility_group)
             self.commit_position()
         elif self.is_big and other.is_small:
             other.set_position(0, 0, 0)
@@ -441,18 +497,24 @@ class Piece:
             other.group = g
         elif self.is_small and other.is_big:
             x, y, z = self.x, self.y, self.z
+            new_visibility_group = self.default_group.tray
             self.set_position(0, 0, 0)
             self.groups = other.groups
             g = max(self.groups, key=(lambda group: group.size))
             g.size += self.size
             self.group = g
             self.remember_position(x, y, z)
+            self.set_default_tray(new_visibility_group)
         elif self.is_small and other.is_small:
             if self.size + other.size >= PIECE_THRESHOLD:
                 x, y, z = self.x, self.y, self.z
                 self.set_position(0, 0, 0)
                 other.set_position(0, 0, 0)
-                group = PieceGroup(self.texture, self.normal_map)
+                tray = self.default_group.tray
+                group = PieceGroup(self.texture, self.normal_map, tray=tray)
+                PieceGroupFactory.big_groups[tray].add(group)
+                # group = PieceGroupFactory.get_piece_group(visibility_group)
+                # group = PieceGroup(self.texture, self.normal_map)
                 group.size = self.size + other.size
                 self.groups = [group]
                 self.group = other.group = group
@@ -551,8 +613,9 @@ class SelectionBox:
 
 class Hand(pyglet.window.EventDispatcher):
     def __init__(self, default_group):
-        self.default_group = default_group
-        self.held_group = PieceGroup(default_group.texture, default_group.normal_map)
+        self.held_group = PieceGroup(
+            default_group.texture,
+            default_group.normal_map)
         self.pieces = dict()
         self.step = (0, 0)
 
@@ -596,13 +659,33 @@ class Hand(pyglet.window.EventDispatcher):
     def drop_everything(self):
         for pid, piece in self.pieces.items():
             if piece.is_small:
-                piece.group = self.default_group
+                piece.group = piece.default_group
 
             piece.commit_position()
 
         self.pieces = dict()
         self.held_group.set_position(0, 0, self.held_group.z)
         self.step = 0, 0
+
+    def drop_pieces(self, pids):
+        pids_in_hand = pids.intersection(self.pieces)
+        if len(pids_in_hand) == len(self.pieces):
+            self.mouse_up()
+            self.drop_everything()
+        else:
+            self.dispatch_event(
+                'on_view_pieces_moved',
+                list(pids_in_hand),
+                self.held_group.x - self.step[0],
+                self.held_group.y - self.step[1]
+            )
+            for pid in pids_in_hand:
+                piece = self.pieces[pid]
+                if piece.is_small:
+                    piece.group = piece.default_group
+
+                piece.commit_position()
+                self.pieces.pop(pid)
 
     def move(self, dx, dy):
         self.held_group.move(dx, dy, 0)
@@ -625,11 +708,13 @@ class Hand(pyglet.window.EventDispatcher):
         return len(self.pieces) == 0
 
 
-Jigsaw.register_event_type('on_cheat')
-
 View.register_event_type('on_mouse_down')
 View.register_event_type('on_mouse_up')
 View.register_event_type('on_selection_box')
+View.register_event_type('on_key_press')
+View.register_event_type('on_cheat')
+View.register_event_type('on_move_pieces_to_tray')
+View.register_event_type('on_toggle_visibility')
 
 Hand.register_event_type('on_view_pieces_moved')
 Hand.register_event_type('on_view_select_pieces')
