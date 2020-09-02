@@ -368,8 +368,8 @@ class View(pyglet.window.EventDispatcher):
         if symbol == pyglet.window.key.X:
             self.dispatch_event('on_cheat', 100)
 
-        if pyglet.window.key._0 <= symbol <= pyglet.window.key._9:
-            tray = symbol - pyglet.window.key._0
+        if _is_digit_key(symbol):
+            tray = _digit_from_key(symbol)
             if modifiers & pyglet.window.key.MOD_CTRL:
                 self.dispatch_event('on_toggle_visibility', tray)
             else:
@@ -378,13 +378,14 @@ class View(pyglet.window.EventDispatcher):
     def on_key_release(self, symbol, modifiers):
         self.number_keys.release(symbol)
 
-    def _move_pieces_to_tray(self, pids, tray):
-        self.dispatch_event('on_move_pieces_to_tray', tray, pids)
+    def _move_pieces_to_tray(self, pids, tray, change_group=False):
         for pid in pids:
             piece = self.pieces[pid]
             piece.set_default_tray(tray)
-            if piece.is_small:
+            if change_group and piece.is_small:
                 piece.group = piece.default_group
+
+        self.dispatch_event('on_move_pieces_to_tray', tray, pids)
 
     def start_selection_box(self, x, y):
         # Let's not worry about shift/control to make a bigger selection now.
@@ -398,7 +399,8 @@ class View(pyglet.window.EventDispatcher):
         if self.number_keys.is_active:
             self._move_pieces_to_tray(
                 pids=[pid],
-                tray=self.number_keys.last_pressed
+                tray=self.number_keys.last_pressed,
+                change_group=True
             )
         else:
             self.hand.select(self.pieces[pid])
@@ -701,6 +703,8 @@ class Hand(pyglet.window.EventDispatcher):
             self.group.x,
             self.group.y
         )
+        if len(self.pieces) == 1:
+            self.drop_everything()
 
     def drop_everything(self):
         for pid, piece in self.pieces.items():
@@ -752,6 +756,14 @@ class Hand(pyglet.window.EventDispatcher):
     @property
     def is_empty(self):
         return len(self.pieces) == 0
+
+
+def _is_digit_key(symbol):
+    return pyglet.window.key._0 <= symbol <= pyglet.window.key._9
+
+
+def _digit_from_key(symbol):
+    return symbol - pyglet.window.key._0
 
 
 View.register_event_type('on_mouse_down')

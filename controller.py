@@ -77,15 +77,12 @@ class Controller:
         pids = self.model.piece_ids_in_rect(rect)
         self.view.select_pieces(pids)
 
-    def on_move_pieces_to_tray(self, group, pids):
-        self.model.move_pieces_to_tray(group, pids)
-        hidden_pieces = self.model.get_hidden_pieces()
-        self.view.drop_specific_pieces_from_hand(hidden_pieces)
+    def on_move_pieces_to_tray(self, tray, pids):
+        self.model.move_pieces_to_tray(tray, pids)
 
     def on_toggle_visibility(self, tray):
         self.model.toggle_visibility(tray)
 
-    def on_set_visibility(self, tray, is_visible):
+    def on_visibility_changed(self, tray, is_visible, hidden_pieces):
         self.view.set_visibility(tray, is_visible)
-        hidden_pieces = self.model.get_hidden_pieces()
         self.view.drop_specific_pieces_from_hand(hidden_pieces)

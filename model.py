@@ -124,7 +124,6 @@ class Model(EventDispatcher):
             self.current_max_z_level + len(pids)
         ))
         self.current_max_z_level += len(pids)
-        # print(f"model.max_z_level = {self.current_max_z_level}")
 
         sorted_pieces = sorted(
             [self.pieces[pid] for pid in pids],
@@ -143,14 +142,31 @@ class Model(EventDispatcher):
 
     def move_pieces_to_tray(self, tray, pids):
         self.trays.move_pids_to_tray(tray=tray, pids=pids)
+        if self._tray_is_hidden(tray):
+            self.dispatch_event(
+                'on_visibility_changed',
+                tray,
+                False,
+                self.trays.hidden_pieces
+            )
+
+    def _tray_is_visible(self, tray):
+        return tray in self.trays.visible_trays
+
+    def _tray_is_hidden(self, tray):
+        return not self._tray_is_visible(tray)
 
     def get_hidden_pieces(self):
         return self.trays.hidden_pieces
 
-    def toggle_visibility(self, group):
-        self.trays.toggle_visibility(group)
-        is_visible = group in self.trays.visible_trays
-        self.dispatch_event('on_set_visibility', group, is_visible)
+    def toggle_visibility(self, tray):
+        self.trays.toggle_visibility(tray)
+        self.dispatch_event(
+            'on_visibility_changed',
+            tray,
+            self._tray_is_visible(tray),
+            self.trays.hidden_pieces
+        )
 
     def _merge_pieces(self, p1, p2):
         # Merges p2 into p1
@@ -186,7 +202,7 @@ class Model(EventDispatcher):
 Model.register_event_type('on_snap_piece_to_position')
 Model.register_event_type('on_pieces_merged')
 Model.register_event_type('on_z_levels_changed')
-Model.register_event_type('on_set_visibility')
+Model.register_event_type('on_visibility_changed')
 
 
 @dataclass
