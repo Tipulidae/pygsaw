@@ -128,8 +128,9 @@ class SelectionBoxGroup(pyglet.graphics.Group):
         self.program.unbind()
 
 
-class OrthographicProjection:
+class OrthographicProjection(pyglet.window.EventDispatcher):
     def __init__(self, width, height, zoom=1.0):
+        super().__init__()
         self.view_port = vecrec.Rect(
             left=0, bottom=0, width=width, height=height)
         self.clip_port = self.view_port
@@ -175,9 +176,10 @@ class OrthographicProjection:
 
     def pan(self, dx, dy):
         self.clip_port.displace(
-            int(dx * self.clip_port.width),
-            int(dy * self.clip_port.height)
+            x := int(dx * self.clip_port.width),
+            y := int(dy * self.clip_port.height)
         )
+        self.dispatch_event('on_pan', x, y)
         self.update()
 
     def update(self):
@@ -311,6 +313,7 @@ class View(pyglet.window.EventDispatcher):
         self.selection_box = SelectionBox(self.window.batch)
         self.pieces = dict()
         self.hand = Hand(default_group=PieceGroup(texture, normal_map))
+        self.projection.push_handlers(on_pan=self.hand.move)
         self.number_keys = NumberKeys()
         global PIECE_THRESHOLD
         PIECE_THRESHOLD = big_piece_threshold
@@ -776,3 +779,5 @@ View.register_event_type('on_toggle_visibility')
 
 Hand.register_event_type('on_view_pieces_moved')
 Hand.register_event_type('on_view_select_pieces')
+
+OrthographicProjection.register_event_type('on_pan')
