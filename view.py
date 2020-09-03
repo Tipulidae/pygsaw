@@ -1,5 +1,4 @@
 import time
-import math
 
 import pyglet
 import pyglet.gl as gl
@@ -315,6 +314,7 @@ class View(pyglet.window.EventDispatcher):
         self.pieces = dict()
         self.hand = Hand(default_group=PieceGroup(texture, normal_map))
         self.projection.push_handlers(on_pan=self.hand.move)
+        self.projection.push_handlers(on_pan=self.selection_box.drag)
         self.number_keys = NumberKeys()
         global PIECE_THRESHOLD
         PIECE_THRESHOLD = big_piece_threshold
@@ -376,6 +376,8 @@ class View(pyglet.window.EventDispatcher):
             pids = list(self.hand.pieces)
             if len(pids) > 0:
                 self.dispatch_event('on_view_spread_out', pids)
+        if symbol == pyglet.window.key.ESCAPE:
+            self.hand.drop_everything()
 
         if _is_digit_key(symbol):
             tray = _digit_from_key(symbol)
@@ -649,6 +651,11 @@ class SelectionBox:
         self.vertex_list.position[:] = (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
         self.is_active = False
 
+    def drag(self, dx, dy):
+        if self.is_active:
+            x, y = self.dest
+            self.drag_to(x + dx, y + dy)
+
     def drag_to(self, x, y):
         self.dest = (x, y)
         rect = self.rect
@@ -750,7 +757,7 @@ class Hand(pyglet.window.EventDispatcher):
                 self.pieces.pop(pid)
 
     def move(self, dx, dy):
-        if self.is_mouse_down:
+        if self.is_mouse_down and not self.is_empty:
             self.group.move(dx, dy, 0)
             for piece in self.pieces.values():
                 piece.remember_relative_position(dx, dy, 0)
