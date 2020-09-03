@@ -1,4 +1,5 @@
 import time
+import math
 
 import pyglet
 import pyglet.gl as gl
@@ -342,6 +343,7 @@ class View(pyglet.window.EventDispatcher):
         x, y = self.projection.view_to_clip_coord(x_, y_)
         is_shift = modifiers & pyglet.window.key.MOD_SHIFT
         self.dispatch_event('on_mouse_down', x, y, is_shift)
+        self.hand.is_mouse_down = True
 
     def on_mouse_release(self, x_, y_, button, modifiers):
         if self.selection_box.is_active:
@@ -370,6 +372,10 @@ class View(pyglet.window.EventDispatcher):
             self.dispatch_event('on_cheat', 1)
         if symbol == pyglet.window.key.X:
             self.dispatch_event('on_cheat', 100)
+        if symbol == pyglet.window.key.SPACE:
+            pids = list(self.hand.pieces)
+            if len(pids) > 0:
+                self.dispatch_event('on_view_spread_out', pids)
 
         if _is_digit_key(symbol):
             tray = _digit_from_key(symbol)
@@ -412,8 +418,7 @@ class View(pyglet.window.EventDispatcher):
         self.hand.select_pieces({pid: self.pieces[pid] for pid in pids})
 
     def snap_piece_to_position(self, pid, x, y, z):
-        self.hand.drop_everything()
-        self.pieces[pid].set_position(x, y, z)
+        self.hand.snap_piece_to_position(self.pieces[pid], x, y, z)
 
     def merge_pieces(self, pid1, pid2):
         self.pieces[pid1].merge(self.pieces[pid2])
@@ -444,6 +449,8 @@ class Piece:
         self.vertex_list = None
         self.size = 1
         self._x, self._y, self._z = 0, 0, 0
+        # TODO: remove this once spread_out logic is moved to model!
+        self.width, self.height = width, height
         self.setup(polygon, width, height)
         self.set_position(*position)
 
@@ -669,6 +676,7 @@ class Hand(pyglet.window.EventDispatcher):
             default_group.normal_map)
         self.pieces = dict()
         self.step = (0, 0)
+        self.is_mouse_down = True
 
     def select(self, piece):
         if piece.pid not in self.pieces:
@@ -708,6 +716,7 @@ class Hand(pyglet.window.EventDispatcher):
         )
         if len(self.pieces) == 1:
             self.drop_everything()
+        self.is_mouse_down = False
 
     def drop_everything(self):
         for pid, piece in self.pieces.items():
@@ -741,16 +750,17 @@ class Hand(pyglet.window.EventDispatcher):
                 self.pieces.pop(pid)
 
     def move(self, dx, dy):
-        self.group.move(dx, dy, 0)
-        for piece in self.pieces.values():
-            piece.remember_relative_position(dx, dy, 0)
+        if self.is_mouse_down:
+            self.group.move(dx, dy, 0)
+            for piece in self.pieces.values():
+                piece.remember_relative_position(dx, dy, 0)
 
     def snap_piece_to_position(self, piece, x, y, z):
         if piece.pid in self.pieces and piece.is_small:
-            self.group.move(
-                x - piece.x,
-                y - piece.y,
-                z - piece.z
+            piece.set_position(
+                x - self.group.x,
+                y - self.group.y,
+                z - self.group.z
             )
             piece.remember_position(x, y, z)
         else:
@@ -776,6 +786,7 @@ View.register_event_type('on_key_press')
 View.register_event_type('on_cheat')
 View.register_event_type('on_move_pieces_to_tray')
 View.register_event_type('on_toggle_visibility')
+View.register_event_type('on_view_spread_out')
 
 Hand.register_event_type('on_view_pieces_moved')
 Hand.register_event_type('on_view_select_pieces')

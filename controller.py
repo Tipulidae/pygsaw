@@ -70,6 +70,9 @@ class Controller:
     def on_pieces_merged(self, pid1, pid2):
         self.view.merge_pieces(pid1, pid2)
 
+    def on_view_spread_out(self, pids):
+        self.model.spread_out(pids)
+
     def on_cheat(self, n):
         self.model.merge_random_pieces(n)
 

@@ -107,6 +107,21 @@ class Model(EventDispatcher):
 
         self.quadtree.insert(piece, piece.bbox)
 
+    def set_piece_position(self, piece, x, y):
+        self.quadtree.remove(piece, piece.bbox)
+        piece.x = x
+        piece.y = y
+
+        self.dispatch_event(
+            'on_snap_piece_to_position',
+            piece.pid,
+            piece.x,
+            piece.y,
+            piece.z
+        )
+
+        self.quadtree.insert(piece, piece.bbox)
+
     def move_pieces(self, pids, dx, dy):
         if len(pids) == 1:
             self.move_and_snap(pids[0], dx, dy)
@@ -117,6 +132,25 @@ class Model(EventDispatcher):
                 piece.x += dx
                 piece.y += dy
                 self.quadtree.insert(piece, piece.bbox)
+
+    def spread_out(self, pids):
+        single_pieces = list(filter(
+            lambda piece: len(piece.members) == 1,
+            map(lambda pid: self.pieces[pid], pids)
+        ))
+        n = math.ceil(math.sqrt(len(single_pieces)))
+        left = min(map(
+            lambda piece: piece.origin.x + piece.x,
+            single_pieces,
+        ))
+        bottom = min(map(lambda piece: piece.origin.y + piece.y, single_pieces))
+
+        for i, piece in enumerate(single_pieces):
+            self.set_piece_position(
+                piece,
+                left + 2 * piece.width * (i % n) - piece.origin.x,
+                bottom + 2 * piece.height * (i // n) - piece.origin.y
+            )
 
     def move_pieces_to_top(self, pids):
         new_z_levels = list(range(
@@ -150,12 +184,6 @@ class Model(EventDispatcher):
                 self.trays.hidden_pieces
             )
 
-    def _tray_is_visible(self, tray):
-        return tray in self.trays.visible_trays
-
-    def _tray_is_hidden(self, tray):
-        return not self._tray_is_visible(tray)
-
     def get_hidden_pieces(self):
         return self.trays.hidden_pieces
 
@@ -167,6 +195,12 @@ class Model(EventDispatcher):
             self._tray_is_visible(tray),
             self.trays.hidden_pieces
         )
+
+    def _tray_is_visible(self, tray):
+        return tray in self.trays.visible_trays
+
+    def _tray_is_hidden(self, tray):
+        return not self._tray_is_visible(tray)
 
     def _merge_pieces(self, p1, p2):
         # Merges p2 into p1
