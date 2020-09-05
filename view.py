@@ -346,6 +346,7 @@ class View(pyglet.window.EventDispatcher):
         self.hand.is_mouse_down = True
 
     def on_mouse_release(self, x_, y_, button, modifiers):
+        self.hand.is_mouse_down = False
         if self.selection_box.is_active:
             x, y = self.projection.view_to_clip_coord(x_, y_)
             self.selection_box.drag_to(x, y)
@@ -723,7 +724,6 @@ class Hand(pyglet.window.EventDispatcher):
         )
         if len(self.pieces) == 1:
             self.drop_everything()
-        self.is_mouse_down = False
 
     def drop_everything(self):
         for pid, piece in self.pieces.items():
