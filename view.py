@@ -7,6 +7,7 @@ import vecrec
 import earcut
 from shaders import make_piece_shader, make_shape_shader
 
+
 pyglet.resource.path = ['resources']
 pyglet.resource.reindex()
 
@@ -47,7 +48,8 @@ class PieceGroupFactory:
 
 
 class PieceGroup(pyglet.graphics.Group):
-    def __init__(self, texture, normal_map, tray=0, x=0, y=0, z=0, *args, **kwargs):
+    def __init__(self, texture, normal_map, tray=0, x=0, y=0, z=0, *args,
+                 **kwargs):
         super().__init__(*args, **kwargs)
         self.texture = texture
         self.normal_map = normal_map
@@ -255,7 +257,7 @@ class Jigsaw(pyglet.window.Window):
                 pyglet.window.key.A,
                 pyglet.window.key.S,
                 pyglet.window.key.D]:
-            pyglet.clock.schedule_interval(self.update, 1/120)
+            pyglet.clock.schedule_interval(self.update, 1 / 120)
             self.is_panning = True
 
     def on_key_release(self, symbol, modifiers):
@@ -299,8 +301,19 @@ class NumberKeys:
         return False
 
 
+@glooey.register_event_type(
+    'on_mouse_down',
+    'on_mouse_up',
+    'on_selection_box',
+    'on_key_press',
+    'on_cheat',
+    'on_move_pieces_to_tray',
+    'on_toggle_visibility',
+    'on_view_spread_out'
+)
 class View(pyglet.window.EventDispatcher):
-    def __init__(self, texture, normal_map, big_piece_threshold, **window_settings):
+    def __init__(self, texture, normal_map, big_piece_threshold,
+                 **window_settings):
         self.window = Jigsaw(**window_settings)
         self.window.push_handlers(self)
         self.projection = self.window.my_projection
@@ -370,8 +383,10 @@ class View(pyglet.window.EventDispatcher):
     def on_key_press(self, symbol, modifiers):
         self.number_keys.press(symbol)
         if symbol == pyglet.window.key.C:
+            self.hand.drop_everything()
             self.dispatch_event('on_cheat', 1)
         if symbol == pyglet.window.key.X:
+            self.hand.drop_everything()
             self.dispatch_event('on_cheat', 100)
         if symbol == pyglet.window.key.SPACE:
             pids = list(self.hand.pieces)
@@ -440,7 +455,8 @@ class View(pyglet.window.EventDispatcher):
 
 
 class Piece:
-    def __init__(self, pid, polygon, position, width, height, texture, normal_map, batch):
+    def __init__(self, pid, polygon, position, width, height, texture,
+                 normal_map, batch):
         self.pid = pid
         self.texture = texture
         self.normal_map = normal_map
@@ -641,7 +657,7 @@ class SelectionBox:
         self.vertex_list = self.batch.add(
             4, pyglet.gl.GL_LINE_LOOP, self.group,
             ('position3f/dynamic', (0,) * 12),
-            ('colors3B/static', (255, ) * 12)
+            ('colors3B/static', (255,) * 12)
         )
 
     def activate(self, x, y):
@@ -786,14 +802,7 @@ def _digit_from_key(symbol):
     return symbol - pyglet.window.key._0
 
 
-View.register_event_type('on_mouse_down')
-View.register_event_type('on_mouse_up')
-View.register_event_type('on_selection_box')
-View.register_event_type('on_key_press')
-View.register_event_type('on_cheat')
-View.register_event_type('on_move_pieces_to_tray')
-View.register_event_type('on_toggle_visibility')
-View.register_event_type('on_view_spread_out')
+
 
 Hand.register_event_type('on_view_pieces_moved')
 Hand.register_event_type('on_view_select_pieces')

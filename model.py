@@ -1,4 +1,5 @@
 import math
+import statistics
 import random
 import itertools
 from dataclasses import dataclass
@@ -138,12 +139,19 @@ class Model(EventDispatcher):
             lambda piece: len(piece.members) == 1,
             map(lambda pid: self.pieces[pid], pids)
         ))
+        if len(single_pieces) < 1:
+            return
+
         n = math.ceil(math.sqrt(len(single_pieces)))
+
         left = min(map(
             lambda piece: piece.origin.x + piece.x,
             single_pieces,
         ))
-        bottom = min(map(lambda piece: piece.origin.y + piece.y, single_pieces))
+        bottom = min(map(
+            lambda piece: piece.origin.y + piece.y,
+            single_pieces
+        ))
 
         for i, piece in enumerate(single_pieces):
             self.set_piece_position(
