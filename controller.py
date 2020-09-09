@@ -1,48 +1,39 @@
 import pyglet
-from tqdm import tqdm
 
 from model import Model
-from view import View
-from textures import make_normal_map
+from view import View, Jigsaw
 
 
 class Controller:
-    def __init__(
-            self,
-            image_path='kitten.png',
-            num_pieces=4,
-            big_piece_threshold=100,
-            **window_settings):
-        # texture = pyglet.resource.image(image_path).get_texture()
-        texture = pyglet.image.load(f'pygsaw/resources/{image_path}').get_texture()
-        self.model = Model(texture.width, texture.height, num_pieces)
-        normal_map = make_normal_map(
-            self.model.pieces,
-            texture.width,
-            texture.height,
-            self.model.pieces[0].width,
-            self.model.pieces[0].height,
+    def __init__(self, puzzle_settings, window_settings):
+        self.model = Model()
+        self.model.push_handlers(self)
+        self.view = None
+        self.big_piece_threshold = puzzle_settings['big_piece_threshold']
+        self.window = Jigsaw(**window_settings)
+        self.window.push_handlers(self)
+        self._new_puzzle(
+            f"pygsaw/resources/{puzzle_settings['image_path']}",
+            puzzle_settings['num_pieces'],
         )
+
+    def _new_puzzle(self, image_path, num_pieces):
+        texture = pyglet.image.load(image_path).get_texture()
+        self.model.reset(texture.width, texture.height, num_pieces)
         self.view = View(
             texture,
-            normal_map,
-            big_piece_threshold,
-            **window_settings
+            self.big_piece_threshold,
+            piece_data=[piece.data for piece in self.model.pieces.values()],
+            window=self.window
         )
+
         self.view.push_handlers(self)
         self.view.hand.push_handlers(self)
-        self.model.push_handlers(self)
-        self.view.window.push_handlers(self)
 
-        for pid, piece in tqdm(self.model.pieces.items(),
-                               desc="Drawing pieces"):
-            self.view.create_piece(
-                pid,
-                piece.polygon[pid],
-                (piece.x, piece.y, piece.z),
-                piece.width,
-                piece.height
-            )
+    def on_new_game(self, image_path, num_pieces):
+        self.window.pop_handlers()
+        self.view.destroy_pieces()
+        self._new_puzzle(image_path, num_pieces)
 
     def on_mouse_down(self, x, y, is_shift):
         if (piece := self.model.piece_at_coordinate(x, y)) is not None:

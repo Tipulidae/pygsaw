@@ -62,30 +62,35 @@ def height2bump(height_band, filter='scharr'):
     return r, g, b
 
 
-def make_height_map(pieces, width, height):
+def make_height_map(polygons, width, height):
     texture = Image.new('L', (width, height), 255)
 
     # I'm using the aggdraw library to make antialiased lines, which is not
     # currently possible with PIL alone.
     context = aggdraw.Draw(texture)
     pen = aggdraw.Pen('gray', 1)
-    for pid, piece in pieces.items():
-        polygon = []
-        for point in piece.polygon[pid]:
-            polygon.append(point.x)
-            polygon.append(point.y)
-        polygon.append(polygon[0])
-        polygon.append(polygon[1])
-        context.line(polygon, pen)
+    for polygon in polygons:
+        point_list = []
+        for point in polygon:
+            point_list.append(point.x)
+            point_list.append(point.y)
+        point_list.append(point_list[0])
+        point_list.append(point_list[1])
+        context.line(point_list, pen)
 
     context.flush()
     return texture
     # return texture.filter(ImageFilter.GaussianBlur(radius=2))
 
 
-def make_normal_map(pieces, image_width, image_height, piece_width, piece_height):
+def make_normal_map(
+        polygons,
+        image_width,
+        image_height,
+        piece_width,
+        piece_height):
     height_map = make_height_map(
-        pieces,
+        polygons,
         image_width + piece_width,
         image_height + piece_height
     )

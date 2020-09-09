@@ -1,12 +1,10 @@
 import math
-import statistics
 import random
 import itertools
 from dataclasses import dataclass
 from typing import List, Set, Dict
 
 import vecrec
-# from glooey import register_event_type
 from pyglet.window import EventDispatcher
 from tqdm import tqdm
 from pyqtree import Index as QuadTree
@@ -14,21 +12,30 @@ from pyqtree import Index as QuadTree
 from bezier import Point, make_random_edges, bounding_box, point_in_polygon
 
 
-# @register_event_type(
-#
-# )
 class Model(EventDispatcher):
-    def __init__(
+    def __init__(self):
+        self.nx = 0
+        self.ny = 0
+        self.num_pieces = 0
+        self.image_width = 0
+        self.image_height = 0
+        self.snap_distance = 0
+        self.pieces = None
+        self.trays = None
+        self.quadtree = None
+        self.current_max_z_level = 0
+
+    def reset(
             self,
             image_width,
             image_height,
             num_pieces,
             snap_distance_percent=0.5):
+        self.image_width = image_width
+        self.image_height = image_height
         self.nx, self.ny, self.num_pieces = create_jigsaw_dimensions(
             num_pieces, image_width, image_height
         )
-        self.image_width = image_width
-        self.image_height = image_height
         self.snap_distance = snap_distance_percent * image_width / self.nx
         self.pieces = make_jigsaw_cut(
             self.image_width,
@@ -274,6 +281,16 @@ class Piece:
     @property
     def position(self):
         return Point(self.x, self.y)
+
+    @property
+    def data(self):
+        return {
+            'pid': self.pid,
+            'polygon': self.polygon[self.pid],
+            'position': (self.x, self.y, self.z),
+            'width': self.width,
+            'height': self.height
+        }
 
     def merge(self, other):
         assert isinstance(other, Piece)

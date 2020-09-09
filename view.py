@@ -6,6 +6,7 @@ import vecrec
 
 import earcut
 from shaders import make_piece_shader, make_shape_shader
+from textures import make_normal_map
 
 
 pyglet.resource.path = ['resources']
@@ -232,7 +233,6 @@ class Jigsaw(pyglet.window.Window):
     def on_draw(self):
         self.clear()
         self.batch.draw()
-        # self.fps.draw()
 
     def on_mouse_scroll(self, x, y, scroll_x, scroll_y):
         if scroll_y > 0:
@@ -301,36 +301,66 @@ class NumberKeys:
         return False
 
 
-@glooey.register_event_type(
-    'on_mouse_down',
-    'on_mouse_up',
-    'on_selection_box',
-    'on_key_press',
-    'on_cheat',
-    'on_move_pieces_to_tray',
-    'on_toggle_visibility',
-    'on_view_spread_out'
-)
+# @glooey.register_event_type(
+#     'on_mouse_down',
+#     'on_mouse_up',
+#     'on_selection_box',
+#     'on_key_press',
+#     'on_cheat',
+#     'on_move_pieces_to_tray',
+#     'on_toggle_visibility',
+#     'on_view_spread_out'
+# )
 class View(pyglet.window.EventDispatcher):
-    def __init__(self, texture, normal_map, big_piece_threshold,
-                 **window_settings):
-        self.window = Jigsaw(**window_settings)
+    def __init__(
+            self,
+            texture,
+            big_piece_threshold,
+            piece_data,
+            window):
+        self.window = window
         self.window.push_handlers(self)
         self.projection = self.window.my_projection
-        self.texture = texture
-        self.normal_map = normal_map
-        PieceGroupFactory.default_groups = {
-            tray: PieceGroup(texture, normal_map, tray=tray)
-            for tray in range(10)
-        }
         self.selection_box = SelectionBox(self.window.batch)
-        self.pieces = dict()
-        self.hand = Hand(default_group=PieceGroup(texture, normal_map))
-        self.projection.push_handlers(on_pan=self.hand.move)
-        self.projection.push_handlers(on_pan=self.selection_box.drag)
+        self.pieces = None
+        self.hand = None
         self.number_keys = NumberKeys()
+        self.texture = None
+        self.normal_map = None
+
+        self.reset(texture, piece_data)
+
         global PIECE_THRESHOLD
         PIECE_THRESHOLD = big_piece_threshold
+
+    def reset(self, texture, piece_data):
+        self.texture = texture
+        self.normal_map = make_normal_map(
+            [data['polygon'] for data in piece_data],
+            texture.width,
+            texture.height,
+            piece_data[0]['width'],
+            piece_data[0]['height'],
+        )
+
+        PieceGroupFactory.default_groups = {
+            tray: PieceGroup(texture, self.normal_map, tray=tray)
+            for tray in range(10)
+        }
+        PieceGroupFactory.big_groups = {tray: set() for tray in range(10)}
+
+        self.pieces = dict()
+        self.hand = Hand(default_group=PieceGroup(texture, self.normal_map))
+        self.projection.push_handlers(on_pan=self.hand.move)
+        self.projection.push_handlers(on_pan=self.selection_box.drag)
+
+        for data in piece_data:
+            self.create_piece(**data)
+
+    def destroy_pieces(self):
+        for piece in self.pieces.values():
+            for vl in piece.vertex_list:
+                vl.delete()
 
     def create_piece(self, pid, polygon, position, width, height):
         self.pieces[pid] = Piece(
@@ -394,6 +424,13 @@ class View(pyglet.window.EventDispatcher):
                 self.dispatch_event('on_view_spread_out', pids)
         if symbol == pyglet.window.key.ESCAPE:
             self.hand.drop_everything()
+        if symbol == pyglet.window.key.R and modifiers & pyglet.window.key.MOD_CTRL:
+            self.hand.drop_everything()
+            self.dispatch_event(
+                'on_new_game',
+                'pygsaw/resources/blueberries.jpg',
+                50
+            )
 
         if _is_digit_key(symbol):
             tray = _digit_from_key(symbol)
@@ -802,7 +839,15 @@ def _digit_from_key(symbol):
     return symbol - pyglet.window.key._0
 
 
-
+View.register_event_type('on_mouse_down')
+View.register_event_type('on_mouse_up')
+View.register_event_type('on_selection_box')
+View.register_event_type('on_key_press')
+View.register_event_type('on_cheat')
+View.register_event_type('on_move_pieces_to_tray')
+View.register_event_type('on_toggle_visibility')
+View.register_event_type('on_view_spread_out')
+View.register_event_type('on_new_game')
 
 Hand.register_event_type('on_view_pieces_moved')
 Hand.register_event_type('on_view_select_pieces')

@@ -68,7 +68,7 @@ piece_fs = """#version 330 core
     }
 """
 
-shape_vs = """#version 150 core
+shape_vs = """#version 330 core
     in vec4 position;
     in vec4 colors;
 
@@ -87,7 +87,7 @@ shape_vs = """#version 150 core
     }
 """
 
-shape_fs = """#version 150 core
+shape_fs = """#version 330 core
     in vec4 vertex_colors;
     out vec4 final_color;
 
