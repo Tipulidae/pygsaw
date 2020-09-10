@@ -7,7 +7,7 @@ import vecrec
 import earcut
 from shaders import make_piece_shader, make_shape_shader
 from textures import make_normal_map
-
+from file_picker import select_image
 
 pyglet.resource.path = ['resources']
 pyglet.resource.reindex()
@@ -362,6 +362,14 @@ class View(pyglet.window.EventDispatcher):
             for vl in piece.vertex_list:
                 vl.delete()
 
+    def new_jigsaw(self, image_path, num_pieces):
+        self.hand.drop_everything()
+        self.dispatch_event(
+            'on_new_game',
+            image_path,
+            num_pieces
+        )
+
     def create_piece(self, pid, polygon, position, width, height):
         self.pieces[pid] = Piece(
             pid,
@@ -419,18 +427,14 @@ class View(pyglet.window.EventDispatcher):
             self.hand.drop_everything()
             self.dispatch_event('on_cheat', 100)
         if symbol == pyglet.window.key.SPACE:
+            self.hand.mouse_up()
             pids = list(self.hand.pieces)
             if len(pids) > 0:
                 self.dispatch_event('on_view_spread_out', pids)
         if symbol == pyglet.window.key.ESCAPE:
             self.hand.drop_everything()
         if symbol == pyglet.window.key.R and modifiers & pyglet.window.key.MOD_CTRL:
-            self.hand.drop_everything()
-            self.dispatch_event(
-                'on_new_game',
-                'pygsaw/resources/blueberries.jpg',
-                50
-            )
+            select_image(callback=self.new_jigsaw)
 
         if _is_digit_key(symbol):
             tray = _digit_from_key(symbol)
