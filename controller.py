@@ -22,6 +22,7 @@ class Controller:
         self.model.reset(texture.width, texture.height, num_pieces)
         self.view = View(
             texture,
+            image_path,
             self.big_piece_threshold,
             piece_data=[piece.data for piece in self.model.pieces.values()],
             window=self.window

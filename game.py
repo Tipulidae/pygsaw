@@ -8,7 +8,7 @@ if __name__ == '__main__':
         puzzle_settings={
             'image_path': 'kitten.png',
             'num_pieces': 16,
-            'big_piece_threshold': 3,
+            'big_piece_threshold': 50,
         },
         window_settings={
             'width': 1500,

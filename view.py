@@ -315,9 +315,11 @@ class View(pyglet.window.EventDispatcher):
     def __init__(
             self,
             texture,
+            image_path,
             big_piece_threshold,
             piece_data,
             window):
+        self.image_path = image_path
         self.window = window
         self.window.push_handlers(self)
         self.projection = self.window.my_projection
@@ -434,7 +436,7 @@ class View(pyglet.window.EventDispatcher):
         if symbol == pyglet.window.key.ESCAPE:
             self.hand.drop_everything()
         if symbol == pyglet.window.key.R and modifiers & pyglet.window.key.MOD_CTRL:
-            select_image(callback=self.new_jigsaw)
+            select_image(callback=self.new_jigsaw, image_path=self.image_path)
 
         if _is_digit_key(symbol):
             tray = _digit_from_key(symbol)

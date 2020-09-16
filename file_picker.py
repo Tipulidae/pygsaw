@@ -1,12 +1,15 @@
+import re
 import tkinter as tk
 from tkinter.filedialog import askopenfilename
 
 
 class FilePicker(tk.Frame):
-    def __init__(self, *args, callback=None, **kwargs):
+    def __init__(self, *args, callback=None, image_path='None', **kwargs):
         super().__init__(*args, **kwargs)
         self.pack()
-        self.filename = 'None'
+        self.pattern = re.compile('$|^[1-9][0-9]*')
+        self.image_path = image_path
+
         self.image_label = None
         self.num_pieces = tk.IntVar(value=200)
         self.create_widgets()
@@ -18,9 +21,16 @@ class FilePicker(tk.Frame):
             text='Select Image',
             command=self.select_image
         ).pack()
-        self.image_label = tk.Label(text=self.filename)
+        self.image_label = tk.Label(text=self.image_path)
         self.image_label.pack()
-        tk.Entry(self, textvariable=self.num_pieces).pack()
+
+        command = self.register(self.validate_entry)
+        tk.Entry(
+            self,
+            textvariable=self.num_pieces,
+            validate='key',
+            validatecommand=(command, '%P')
+        ).pack()
 
         tk.Button(self, text='Done', command=self.done).pack()
 
@@ -32,21 +42,24 @@ class FilePicker(tk.Frame):
         ).pack()
 
     def select_image(self):
-        self.filename = askopenfilename(
+        self.image_path = askopenfilename(
             filetypes=[('*', 'jpg'), ('*', 'png')]
         )
-        self.image_label['text'] = self.filename
+        self.image_label['text'] = self.image_path
 
     def done(self):
         self.callback(
-            self.filename,
+            self.image_path,
             self.num_pieces.get()
         )
         self.master.destroy()
 
+    def validate_entry(self, entry):
+        return self.pattern.fullmatch(entry) is not None
 
-def select_image(callback):
+
+def select_image(callback, image_path):
     root = tk.Tk()
-    app = FilePicker(master=root, callback=callback)
+    app = FilePicker(master=root, callback=callback, image_path=image_path)
     root.geometry('500x300')
     app.mainloop()
