@@ -1,4 +1,4 @@
-name: pygsaw2
+name: pygsaw
 channels:
   - conda-forge
   - defaults
@@ -11,6 +11,4 @@ dependencies:
   - aggdraw=1.3.11
   - pip:
     - vecrec
-#    - pyglet==1.5.5
-#    - glooey==0.3.0
     - pyqtree==1.0.0

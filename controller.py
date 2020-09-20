@@ -13,7 +13,7 @@ class Controller:
         self.window = Jigsaw(**window_settings)
         self.window.push_handlers(self)
         self._new_puzzle(
-            f"pygsaw/resources/{puzzle_settings['image_path']}",
+            f"resources/{puzzle_settings['image_path']}",
             puzzle_settings['num_pieces'],
         )
 

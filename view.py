@@ -9,8 +9,6 @@ from shaders import make_piece_shader, make_shape_shader
 from textures import make_normal_map
 from file_picker import select_image
 
-pyglet.resource.path = ['resources']
-pyglet.resource.reindex()
 
 GROUP_COUNT = 2
 PIECE_THRESHOLD = 50
