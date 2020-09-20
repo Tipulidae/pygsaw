@@ -4,12 +4,13 @@ import itertools
 from dataclasses import dataclass
 from typing import List, Set, Dict
 
-import vecrec
 from pyglet.window import EventDispatcher
 from tqdm import tqdm
 from pyqtree import Index as QuadTree
+from dataclasses_json import dataclass_json
 
-from bezier import Point, make_random_edges, bounding_box, point_in_polygon
+from bezier import Point, Rectangle, make_random_edges, bounding_box, \
+    point_in_polygon
 
 
 class Model(EventDispatcher):
@@ -254,11 +255,12 @@ Model.register_event_type('on_z_levels_changed')
 Model.register_event_type('on_visibility_changed')
 
 
+@dataclass_json
 @dataclass
 class Piece:
     pid: int
     polygon: Dict[int, List[Point]]
-    bounding_box: vecrec.Rect
+    bounding_box: Rectangle
     origin: Point
     neighbours: Set[int]
     members: Set[int]
@@ -299,7 +301,7 @@ class Piece:
         self.neighbours.remove(self.pid)
         self.neighbours.remove(other.pid)
         self.polygon = {**self.polygon, **other.polygon}
-        self.bounding_box = vecrec.Rect.from_sides(
+        self.bounding_box = Rectangle(
             left=min(self.bounding_box.left, other.bounding_box.left),
             right=max(self.bounding_box.right, other.bounding_box.right),
             bottom=min(self.bounding_box.bottom, other.bounding_box.bottom),

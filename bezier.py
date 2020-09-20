@@ -5,9 +5,10 @@ from dataclasses import dataclass
 from typing import List
 from abc import ABC, abstractmethod
 
-import vecrec
+from dataclasses_json import dataclass_json
 
 
+@dataclass_json
 @dataclass
 class Point:
     x: float = 0.0
@@ -46,6 +47,15 @@ class Point:
             return Point(self.x * other, self.y * other)
         else:
             raise TypeError()
+
+
+@dataclass_json
+@dataclass
+class Rectangle:
+    left: float = 0
+    right: float = 0
+    top: float = 0
+    bottom: float = 0
 
 
 @dataclass
@@ -306,9 +316,9 @@ def bounding_box(polygon):
         elif p.y > top:
             top = p.y
 
-    return vecrec.Rect(
+    return Rectangle(
         left=left,
-        bottom=bottom,
-        width=right - left,
-        height=top - bottom
+        right=right,
+        top=top,
+        bottom=bottom
     )
