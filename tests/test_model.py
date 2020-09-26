@@ -1,4 +1,4 @@
-from model import Tray, Piece
+from model import Tray, Piece, Model
 from bezier import Point, Rectangle
 
 
@@ -108,6 +108,19 @@ class TestTray:
         tray.toggle_visibility(1)
         assert tray.hidden_pieces == {0, 1, 2, 6, 7, 8}
 
+    def test_equal_trays_are_equal(self):
+        tray1 = Tray(num_pids=3)
+        tray2 = Tray(num_pids=3)
+        assert tray1 == tray2
+        assert tray1 is not tray2
+
+    def test_can_serialize_tray(self):
+        tray = Tray(num_pids=3)
+        json = tray.to_dict()
+        new_tray = Tray.from_dict(json)
+        assert tray == new_tray
+        assert tray is not new_tray
+
 
 class TestSerialize:
     def test_can_turn_simple_piece_to_json_and_back(self):
@@ -140,3 +153,11 @@ class TestSerialize:
         new_piece = Piece.from_json(json)
         assert piece is not new_piece
         assert piece == new_piece
+
+    def test_can_serialize_model(self):
+        model = Model()
+        model.reset(1000, 1000, 9)
+        json = model.to_json()
+        new_model = Model.from_json(json)
+        assert model == new_model
+        assert model is not new_model

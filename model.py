@@ -1,6 +1,7 @@
 import math
 import random
 import itertools
+import json
 from dataclasses import dataclass
 from typing import List, Set, Dict
 
@@ -50,6 +51,44 @@ class Model(EventDispatcher):
             self.quadtree.insert(piece, piece.bbox)
 
         self.current_max_z_level = self.num_pieces
+
+    def to_json(self):
+        my_dict = {
+            'pieces': self._pieces_to_dict(),
+            'trays': self.trays.to_dict(),
+            'current_max_z_level': self.current_max_z_level,
+            'nx': self.nx,
+            'ny': self.ny,
+            'num_pieces': self.num_pieces,
+            'image_width': self.image_width,
+            'image_height': self.image_height,
+            'snap_distance': self.snap_distance
+        }
+        return json.dumps(my_dict)
+
+    @classmethod
+    def from_json(cls, json_string):
+        my_dict = json.loads(json_string)
+        model = cls()
+        model.pieces = {
+            int(pid): Piece.from_dict(piece)
+            for pid, piece in my_dict['pieces'].items()
+        }
+        model.trays = Tray.from_dict(my_dict['trays'])
+        model.nx = my_dict['nx']
+        model.ny = my_dict['ny']
+        model.num_pieces = my_dict['num_pieces']
+        model.image_width = my_dict['image_width']
+        model.image_height = my_dict['image_height']
+        model.snap_distance = my_dict['snap_distance']
+        model.current_max_z_level = my_dict['current_max_z_level']
+        model.quadtree = QuadTree(bbox=(-100000, -100000, 100000, 100000))
+        for piece in tqdm(model.pieces.values(), desc="Building quad-tree"):
+            model.quadtree.insert(piece, piece.bbox)
+        return model
+
+    def _pieces_to_dict(self):
+        return {pid: piece.to_dict() for pid, piece in self.pieces.items()}
 
     def piece_at_coordinate(self, x, y):
         return self._top_piece_at_location(x, y)
@@ -248,6 +287,20 @@ class Model(EventDispatcher):
             default=None
         )
 
+    def __eq__(self, other):
+        return (
+            self.current_max_z_level == other.current_max_z_level,
+            self.pieces == other.pieces,
+            self.nx == other.nx,
+            self.ny == other.ny,
+            self.num_pieces == other.num_pieces,
+            self.image_height == other.image_height,
+            self.image_width == other.image_width,
+            self.trays == other.trays,
+            self.snap_distance == other.snap_distance,
+            self.quadtree == other.quadtree
+        )
+
 
 Model.register_event_type('on_snap_piece_to_position')
 Model.register_event_type('on_pieces_merged')
@@ -341,6 +394,27 @@ class Tray:
         self.visible_trays = set(range(num_trays))
         self.pid_to_tray = {pid: 0 for pid in range(num_pids)}
 
+    def to_dict(self):
+        return {
+            'trays': {tray: list(pids) for tray, pids in self.trays.items()},
+            'visible_trays': list(self.visible_trays),
+            'pid_to_tray': self.pid_to_tray
+        }
+        # return json.dumps(my_dict)
+
+    @classmethod
+    def from_dict(cls, my_dict):
+        tray = cls(0)
+        # my_dict = json.loads(json_string)
+        tray.trays = {
+            int(tray): set(pids) for tray, pids in my_dict['trays'].items()
+        }
+        tray.visible_trays = set(my_dict['visible_trays'])
+        tray.pid_to_tray = {
+            int(pid): int(tray) for pid, tray in my_dict['pid_to_tray'].items()
+        }
+        return tray
+
     def is_visible(self, pid):
         return (
             pid in self.pid_to_tray and
@@ -376,6 +450,13 @@ class Tray:
             if tray not in self.visible_trays
         )
         return set().union(*hidden)
+
+    def __eq__(self, other):
+        return (
+            self.trays == other.trays and
+            self.visible_trays == other.visible_trays and
+            self.pid_to_tray == other.pid_to_tray
+        )
 
 
 def make_jigsaw_cut(image_width, image_height, nx, ny):
