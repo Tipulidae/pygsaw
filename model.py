@@ -1,7 +1,6 @@
 import math
 import random
 import itertools
-import json
 from dataclasses import dataclass
 from typing import List, Set, Dict
 
@@ -52,10 +51,10 @@ class Model(EventDispatcher):
 
         self.current_max_z_level = self.num_pieces
 
-    def to_json(self):
-        my_dict = {
-            'pieces': self._pieces_to_dict(),
-            'trays': self.trays.to_dict(),
+    def to_dict(self):
+        return {
+            'pieces': self.pieces,
+            'trays': self.trays,
             'current_max_z_level': self.current_max_z_level,
             'nx': self.nx,
             'ny': self.ny,
@@ -64,31 +63,23 @@ class Model(EventDispatcher):
             'image_height': self.image_height,
             'snap_distance': self.snap_distance
         }
-        return json.dumps(my_dict)
 
     @classmethod
-    def from_json(cls, json_string):
-        my_dict = json.loads(json_string)
+    def from_dict(cls, data):
         model = cls()
-        model.pieces = {
-            int(pid): Piece.from_dict(piece)
-            for pid, piece in my_dict['pieces'].items()
-        }
-        model.trays = Tray.from_dict(my_dict['trays'])
-        model.nx = my_dict['nx']
-        model.ny = my_dict['ny']
-        model.num_pieces = my_dict['num_pieces']
-        model.image_width = my_dict['image_width']
-        model.image_height = my_dict['image_height']
-        model.snap_distance = my_dict['snap_distance']
-        model.current_max_z_level = my_dict['current_max_z_level']
+        model.pieces = data['pieces']
+        model.trays = data['trays']
+        model.nx = data['nx']
+        model.ny = data['ny']
+        model.num_pieces = data['num_pieces']
+        model.image_width = data['image_width']
+        model.image_height = data['image_height']
+        model.snap_distance = data['snap_distance']
+        model.current_max_z_level = data['current_max_z_level']
         model.quadtree = QuadTree(bbox=(-100000, -100000, 100000, 100000))
         for piece in tqdm(model.pieces.values(), desc="Building quad-tree"):
             model.quadtree.insert(piece, piece.bbox)
         return model
-
-    def _pieces_to_dict(self):
-        return {pid: piece.to_dict() for pid, piece in self.pieces.items()}
 
     def piece_at_coordinate(self, x, y):
         return self._top_piece_at_location(x, y)
@@ -242,6 +233,15 @@ class Model(EventDispatcher):
     def get_hidden_pieces(self):
         return self.trays.hidden_pieces
 
+    def get_piece_data(self):
+        data = []
+        for pid, piece in self.pieces.items():
+            piece_data = piece.data
+            piece_data['tray'] = self.trays.pid_to_tray[pid]
+            data.append(piece_data)
+
+        return data
+
     def toggle_visibility(self, tray):
         self.trays.toggle_visibility(tray)
         self.dispatch_event(
@@ -308,7 +308,6 @@ Model.register_event_type('on_z_levels_changed')
 Model.register_event_type('on_visibility_changed')
 
 
-@dataclass_json
 @dataclass
 class Piece:
     pid: int
@@ -341,7 +340,7 @@ class Piece:
     def data(self):
         return {
             'pid': self.pid,
-            'polygon': self.polygon[self.pid],
+            'polygons': self.polygon,
             'position': (self.x, self.y, self.z),
             'width': self.width,
             'height': self.height
@@ -393,27 +392,6 @@ class Tray:
         self.trays[0] = set(range(num_pids))
         self.visible_trays = set(range(num_trays))
         self.pid_to_tray = {pid: 0 for pid in range(num_pids)}
-
-    def to_dict(self):
-        return {
-            'trays': {tray: list(pids) for tray, pids in self.trays.items()},
-            'visible_trays': list(self.visible_trays),
-            'pid_to_tray': self.pid_to_tray
-        }
-        # return json.dumps(my_dict)
-
-    @classmethod
-    def from_dict(cls, my_dict):
-        tray = cls(0)
-        # my_dict = json.loads(json_string)
-        tray.trays = {
-            int(tray): set(pids) for tray, pids in my_dict['trays'].items()
-        }
-        tray.visible_trays = set(my_dict['visible_trays'])
-        tray.pid_to_tray = {
-            int(pid): int(tray) for pid, tray in my_dict['pid_to_tray'].items()
-        }
-        return tray
 
     def is_visible(self, pid):
         return (

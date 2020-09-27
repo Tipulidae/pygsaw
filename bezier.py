@@ -5,10 +5,7 @@ from dataclasses import dataclass
 from typing import List
 from abc import ABC, abstractmethod
 
-from dataclasses_json import dataclass_json
 
-
-@dataclass_json
 @dataclass
 class Point:
     x: float = 0.0
@@ -49,7 +46,6 @@ class Point:
             raise TypeError()
 
 
-@dataclass_json
 @dataclass
 class Rectangle:
     left: float = 0

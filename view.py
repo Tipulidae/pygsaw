@@ -1,8 +1,10 @@
 import time
+import itertools
 
 import pyglet
 import pyglet.gl as gl
 import vecrec
+from tqdm import tqdm
 
 import earcut
 from shaders import make_piece_shader, make_shape_shader
@@ -299,22 +301,13 @@ class NumberKeys:
         return False
 
 
-# @glooey.register_event_type(
-#     'on_mouse_down',
-#     'on_mouse_up',
-#     'on_selection_box',
-#     'on_key_press',
-#     'on_cheat',
-#     'on_move_pieces_to_tray',
-#     'on_toggle_visibility',
-#     'on_view_spread_out'
-# )
 class View(pyglet.window.EventDispatcher):
     def __init__(
             self,
             texture,
             image_path,
             big_piece_threshold,
+            visible_trays,
             piece_data,
             window):
         self.image_path = image_path
@@ -328,15 +321,19 @@ class View(pyglet.window.EventDispatcher):
         self.texture = None
         self.normal_map = None
 
-        self.reset(texture, piece_data)
+        self.reset(texture, piece_data, visible_trays)
 
         global PIECE_THRESHOLD
         PIECE_THRESHOLD = big_piece_threshold
 
-    def reset(self, texture, piece_data):
+    def reset(self, texture, piece_data, visible_trays):
         self.texture = texture
+        polygons = itertools.chain.from_iterable(
+            map(lambda pd: pd['polygons'].values(), piece_data)
+        )
+        print("Making normal map...")
         self.normal_map = make_normal_map(
-            [data['polygon'] for data in piece_data],
+            polygons,
             texture.width,
             texture.height,
             piece_data[0]['width'],
@@ -348,13 +345,16 @@ class View(pyglet.window.EventDispatcher):
             for tray in range(10)
         }
         PieceGroupFactory.big_groups = {tray: set() for tray in range(10)}
+        for tray in range(10):
+            is_visible = tray in visible_trays
+            PieceGroupFactory.toggle_visibility(tray, is_visible=is_visible)
 
         self.pieces = dict()
         self.hand = Hand(default_group=PieceGroup(texture, self.normal_map))
         self.projection.push_handlers(on_pan=self.hand.move)
         self.projection.push_handlers(on_pan=self.selection_box.drag)
 
-        for data in piece_data:
+        for data in tqdm(piece_data, desc='Creating pieces'):
             self.create_piece(**data)
 
     def destroy_pieces(self):
@@ -370,10 +370,11 @@ class View(pyglet.window.EventDispatcher):
             num_pieces
         )
 
-    def create_piece(self, pid, polygon, position, width, height):
+    def create_piece(self, pid, polygons, position, width, height, tray):
         self.pieces[pid] = Piece(
             pid,
-            polygon,
+            polygons,
+            tray,
             position,
             width,
             height,
@@ -381,7 +382,7 @@ class View(pyglet.window.EventDispatcher):
             self.normal_map,
             self.window.batch
         )
-        self.hand.group.z += 1
+        self.hand.group.z += len(polygons)
 
     def on_mouse_press(self, x_, y_, button, modifiers):
         """
@@ -433,8 +434,13 @@ class View(pyglet.window.EventDispatcher):
                 self.dispatch_event('on_view_spread_out', pids)
         if symbol == pyglet.window.key.ESCAPE:
             self.hand.drop_everything()
-        if symbol == pyglet.window.key.R and modifiers & pyglet.window.key.MOD_CTRL:
+        if symbol == pyglet.window.key.R and \
+                modifiers & pyglet.window.key.MOD_CTRL:
             select_image(callback=self.new_jigsaw, image_path=self.image_path)
+        if symbol == pyglet.window.key.F5:
+            self.dispatch_event('on_quicksave')
+        if symbol == pyglet.window.key.F9:
+            self.dispatch_event('on_quickload')
 
         if _is_digit_key(symbol):
             tray = _digit_from_key(symbol)
@@ -496,25 +502,33 @@ class View(pyglet.window.EventDispatcher):
 
 
 class Piece:
-    def __init__(self, pid, polygon, position, width, height, texture,
+    def __init__(self, pid, polygons, tray, position, width, height, texture,
                  normal_map, batch):
         self.pid = pid
         self.texture = texture
         self.normal_map = normal_map
+        self.size = len(polygons)
         self.batch = batch
-        self.default_group = PieceGroupFactory.get_piece_group(0)
-        self._group = self.default_group
+        self.default_group = PieceGroupFactory.get_piece_group(tray)
         self.groups = []
-        self.original_vertices = None
-        self.vertex_list = None
-        self.size = 1
+        if self.is_small:
+            self._group = self.default_group
+        else:
+            self._group = PieceGroupFactory.new_big_group(tray)
+            self.groups = [self.group]
+
         self._x, self._y, self._z = 0, 0, 0
-        # TODO: remove this once spread_out logic is moved to model!
-        self.width, self.height = width, height
-        self.setup(polygon, width, height)
+
+        self.original_vertices = []
+        self.vertex_list = []
+        for polygon in polygons.values():
+            ov, vl = self._create_vertices(polygon, width, height)
+            self.original_vertices.append(ov)
+            self.vertex_list.append(vl)
+
         self.set_position(*position)
 
-    def setup(self, polygon, width, height):
+    def _create_vertices(self, polygon, width, height):
         sx = self.texture.tex_coords[6] / self.texture.width
         sy = self.texture.tex_coords[7] / self.texture.height
         offset_x = width // 2
@@ -534,7 +548,6 @@ class Piece:
             tex_coords.append(sx * (p.x - offset_x))
             tex_coords.append(sy * (p.y - offset_y))
             tex_coords.append(0)
-        self.original_vertices = [original_vertices]
 
         indices = earcut.earcut(earcut_input)
 
@@ -548,7 +561,7 @@ class Piece:
             ('colors4Bn/static', (255, 255, 255, 255) * n),
             ('tex_coords3f/static', tuple(tex_coords))
         )
-        self.vertex_list = [vertex_list]
+        return original_vertices, vertex_list
 
     def move(self, dx, dy, dz):
         self._x += dx
@@ -852,6 +865,8 @@ View.register_event_type('on_move_pieces_to_tray')
 View.register_event_type('on_toggle_visibility')
 View.register_event_type('on_view_spread_out')
 View.register_event_type('on_new_game')
+View.register_event_type('on_quicksave')
+View.register_event_type('on_quickload')
 
 Hand.register_event_type('on_view_pieces_moved')
 Hand.register_event_type('on_view_select_pieces')

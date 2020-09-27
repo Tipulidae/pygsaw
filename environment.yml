@@ -12,3 +12,4 @@ dependencies:
   - pip:
     - vecrec
     - pyqtree==1.0.0
+    - compress_pickle

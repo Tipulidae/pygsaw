@@ -1,4 +1,5 @@
 import pyglet
+from compress_pickle import dump, load
 
 from model import Model
 from view import View, Jigsaw
@@ -6,28 +7,32 @@ from view import View, Jigsaw
 
 class Controller:
     def __init__(self, puzzle_settings, window_settings):
-        self.model = Model()
-        self.model.push_handlers(self)
+        self.model = None
         self.view = None
         self.big_piece_threshold = puzzle_settings['big_piece_threshold']
         self.window = Jigsaw(**window_settings)
         self.window.push_handlers(self)
+        self.image_path = None
         self._new_puzzle(
             f"resources/{puzzle_settings['image_path']}",
             puzzle_settings['num_pieces'],
         )
 
     def _new_puzzle(self, image_path, num_pieces):
+        self.image_path = image_path
         texture = pyglet.image.load(image_path).get_texture()
+        self.model = Model()
         self.model.reset(texture.width, texture.height, num_pieces)
         self.view = View(
             texture,
             image_path,
             self.big_piece_threshold,
-            piece_data=[piece.data for piece in self.model.pieces.values()],
+            self.model.trays.visible_trays,
+            piece_data=self.model.get_piece_data(),
             window=self.window
         )
 
+        self.model.push_handlers(self)
         self.view.push_handlers(self)
         self.view.hand.push_handlers(self)
 
@@ -35,6 +40,34 @@ class Controller:
         self.window.pop_handlers()
         self.view.destroy_pieces()
         self._new_puzzle(image_path, num_pieces)
+
+    def on_quicksave(self):
+        print("quicksave!")
+        data = {"path": self.image_path, "model": self.model.to_dict()}
+        dump(data, 'quicksave.sav', compression='bz2')
+
+    def on_quickload(self):
+        print("quickload!")
+        self.window.pop_handlers()
+        self.view.destroy_pieces()
+
+        data = load('quicksave.sav', compression='bz2')
+        self.model = Model.from_dict(data['model'])
+        self.image_path = data['path']
+        texture = pyglet.image.load(self.image_path).get_texture()
+
+        self.view = View(
+            texture,
+            self.image_path,
+            self.big_piece_threshold,
+            self.model.trays.visible_trays,
+            piece_data=self.model.get_piece_data(),
+            window=self.window
+        )
+
+        self.model.push_handlers(self)
+        self.view.push_handlers(self)
+        self.view.hand.push_handlers(self)
 
     def on_mouse_down(self, x, y, is_shift):
         if (piece := self.model.piece_at_coordinate(x, y)) is not None:

@@ -114,50 +114,12 @@ class TestTray:
         assert tray1 == tray2
         assert tray1 is not tray2
 
-    def test_can_serialize_tray(self):
-        tray = Tray(num_pids=3)
-        json = tray.to_dict()
-        new_tray = Tray.from_dict(json)
-        assert tray == new_tray
-        assert tray is not new_tray
-
 
 class TestSerialize:
-    def test_can_turn_simple_piece_to_json_and_back(self):
-        piece = Piece(
-            pid=10,
-            polygon={
-                10: [
-                    Point(10.0, 10.0),
-                    Point(11.0, 10.0),
-                    Point(20.0, 5.5),
-                    Point(-1.7, 110.33)
-                ]
-            },
-            bounding_box=Rectangle(
-                left=-1.7,
-                right=20.0,
-                top=110.33,
-                bottom=5.5
-            ),
-            origin=Point(0.0, 0.0),
-            neighbours={1, 2, 3},
-            members={10, 11},
-            width=150,
-            height=250,
-            x=1.0,
-            y=20.3
-        )
-
-        json = piece.to_json()
-        new_piece = Piece.from_json(json)
-        assert piece is not new_piece
-        assert piece == new_piece
-
     def test_can_serialize_model(self):
         model = Model()
         model.reset(1000, 1000, 9)
-        json = model.to_json()
-        new_model = Model.from_json(json)
+        model_dict = model.to_dict()
+        new_model = Model.from_dict(model_dict)
         assert model == new_model
         assert model is not new_model

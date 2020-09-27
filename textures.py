@@ -115,7 +115,7 @@ def make_normal_map(
     ).get_texture()
 
 
-if __name__ == '__main__':
-    model = Model(1000, 1000, 25)
-    img = make_normal_map(model.pieces, 1000, 1000, 200, 200)
-    ImageShow.show(img)
+# if __name__ == '__main__':
+#     model = Model(1000, 1000, 25)
+#     img = make_normal_map(model.pieces, 1000, 1000, 200, 200)
+#     ImageShow.show(img)
