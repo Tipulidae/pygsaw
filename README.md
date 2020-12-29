@@ -25,7 +25,8 @@ like saving/loading games and allowing piece rotation. More advanced
 outlined below.  
 
 ## Implemented features
-* Good performance with large number of pieces (can easily handle 10000 pieces or more)
+* Good performance with large number of pieces (can easily handle 10000 pieces
+ or more)
 * Unlimited surface area to build on
 * Pan with wasd keys
 * Zoom with mouse scroll wheel
@@ -35,9 +36,11 @@ outlined below.
 * Spacebar will organize all selected "single" pieces into a "grid"
 * Ctrl+r to create a new game. Select any jpg or png image from your computer to use as jigsaw image. You can select the number of pieces to use in the dialog box. 
 * Cheat-buttons for debugging: c will connect two random pieces, x will connect 100 random pieces.
+* Save game with F5
+* Load the most recently saved game with F9
 
 ## Planned features
-* Saving/loading the game
+* Better saving/loading (specify which file to load, and name of the save file)
 * Piece rotation - allowing pieces to be rotated.
 * Timer, pause button, progress bar, victory screen
 * Image preview
