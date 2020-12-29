@@ -137,3 +137,6 @@ tests/.pytest_cache
 
 # Resources / Images
 resources/
+
+# Save files
+.savegame/

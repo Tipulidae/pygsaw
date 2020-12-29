@@ -1,3 +1,6 @@
+import os
+import glob
+
 import pyglet
 from compress_pickle import dump, load
 
@@ -44,14 +47,25 @@ class Controller:
     def on_quicksave(self):
         print("quicksave!")
         data = {"path": self.image_path, "model": self.model.to_dict()}
-        dump(data, 'quicksave.sav', compression='bz2')
+        dump(
+            obj=data,
+            path=f'.savegame/'
+                 f'{os.path.basename(self.image_path)[:-4]}_'
+                 f'{self.model.num_pieces}.sav',
+            compression='bz2',
+            set_default_extension=False
+        )
 
     def on_quickload(self):
         print("quickload!")
         self.window.pop_handlers()
         self.view.destroy_pieces()
 
-        data = load('quicksave.sav', compression='bz2')
+        data = load(
+            _most_recently_modified_file_in_folder('.savegame'),
+            compression='bz2',
+            set_default_extension=False
+        )
         self.model = Model.from_dict(data['model'])
         self.image_path = data['path']
         texture = pyglet.image.load(self.image_path).get_texture()
@@ -114,3 +128,9 @@ class Controller:
     def on_visibility_changed(self, tray, is_visible, hidden_pieces):
         self.view.set_visibility(tray, is_visible)
         self.view.drop_specific_pieces_from_hand(hidden_pieces)
+
+
+def _most_recently_modified_file_in_folder(path):
+    files = glob.glob(f"{path}/*.sav")
+    files.sort(key=os.path.getmtime)
+    return files[-1]

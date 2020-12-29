@@ -3,6 +3,7 @@ import itertools
 
 import pyglet
 import pyglet.gl as gl
+import pyglet.window.key as key
 import vecrec
 from tqdm import tqdm
 
@@ -15,6 +16,8 @@ from file_picker import select_image
 GROUP_COUNT = 2
 PIECE_THRESHOLD = 50
 MAX_Z_DEPTH = 5000000
+
+PAN_KEYS = [key.W, key.A, key.S, key.D]
 
 
 class PieceGroupFactory:
@@ -143,9 +146,11 @@ class OrthographicProjection(pyglet.window.EventDispatcher):
         self.update()
 
     def view_to_clip_coord(self, x, y):
+        aspect_x = self.clip_port.width / self.view_port.width
+        aspect_y = self.clip_port.height / self.view_port.height
         return (
-            self.clip_port.left + x * self.clip_port.width / self.view_port.width,
-            self.clip_port.bottom + y * self.clip_port.height / self.view_port.height
+            self.clip_port.left + x * aspect_x,
+            self.clip_port.bottom + y * aspect_y
         )
 
     def change_window_size(self, old_width, old_height, new_width, new_height):
@@ -216,7 +221,7 @@ class Jigsaw(pyglet.window.Window):
             zoom=1.0
         )
         self.old_width, self.old_height = self.get_framebuffer_size()
-        self.keys = pyglet.window.key.KeyStateHandler()
+        self.keys = key.KeyStateHandler()
         self.push_handlers(self.keys)
         self.is_panning = False
 
@@ -241,54 +246,49 @@ class Jigsaw(pyglet.window.Window):
             self.my_projection.zoom(0.8, x, y)
 
     def update(self, dt):
-        if self.keys[pyglet.window.key.W]:
+        if self.keys[key.W]:
             self.my_projection.pan(0, self.pan_speed * dt)
-        elif self.keys[pyglet.window.key.S]:
+        elif self.keys[key.S]:
             self.my_projection.pan(0, -self.pan_speed * dt)
 
-        if self.keys[pyglet.window.key.A]:
+        if self.keys[key.A]:
             self.my_projection.pan(-self.pan_speed * dt, 0)
-        elif self.keys[pyglet.window.key.D]:
+        elif self.keys[key.D]:
             self.my_projection.pan(self.pan_speed * dt, 0)
 
     def on_key_press(self, symbol, modifiers):
-        if not self.is_panning and symbol in [
-                pyglet.window.key.W,
-                pyglet.window.key.A,
-                pyglet.window.key.S,
-                pyglet.window.key.D]:
+        if not self.is_panning and symbol in PAN_KEYS:
             pyglet.clock.schedule_interval(self.update, 1 / 120)
             self.is_panning = True
 
     def on_key_release(self, symbol, modifiers):
-        if self.is_panning and not (
-                self.keys[pyglet.window.key.W] or
-                self.keys[pyglet.window.key.A] or
-                self.keys[pyglet.window.key.S] or
-                self.keys[pyglet.window.key.D]):
+        if self.is_panning and not self._is_pan_key_pressed:
             pyglet.clock.unschedule(self.update)
             self.is_panning = False
+
+    @property
+    def _is_pan_key_pressed(self):
+        return any([self.keys[k] for k in PAN_KEYS])
 
 
 class NumberKeys:
     def __init__(self):
-        self.pressed = {key: False for key in range(
-            pyglet.window.key._0, pyglet.window.key._9 + 1)}
+        self.pressed = {k: False for k in range(key._0, key._9 + 1)}
         self.is_shift = False
         self.last_pressed = 0
 
-    def press(self, key):
-        if key in self.pressed:
-            self.pressed[key] = True
-            self.last_pressed = key - pyglet.window.key._0
-        elif key == pyglet.window.key.LSHIFT:
+    def press(self, k):
+        if k in self.pressed:
+            self.pressed[k] = True
+            self.last_pressed = k - key._0
+        elif k == key.LSHIFT:
             self.is_shift = True
 
-    def release(self, key):
-        if key in self.pressed:
-            self.pressed[key] = False
-            self.last_pressed = key - pyglet.window.key._0
-        elif key == pyglet.window.key.LSHIFT:
+    def release(self, k):
+        if k in self.pressed:
+            self.pressed[k] = False
+            self.last_pressed = k - key._0
+        elif k == key.LSHIFT:
             self.is_shift = False
 
     @property
@@ -393,7 +393,7 @@ class View(pyglet.window.EventDispatcher):
         coordinates, which correspond to the "actual" coordinates in the model.
         """
         x, y = self.projection.view_to_clip_coord(x_, y_)
-        is_shift = modifiers & pyglet.window.key.MOD_SHIFT
+        is_shift = modifiers & key.MOD_SHIFT
         self.dispatch_event('on_mouse_down', x, y, is_shift)
         self.hand.is_mouse_down = True
 
@@ -421,30 +421,29 @@ class View(pyglet.window.EventDispatcher):
 
     def on_key_press(self, symbol, modifiers):
         self.number_keys.press(symbol)
-        if symbol == pyglet.window.key.C:
+        if symbol == key.C:
             self.hand.drop_everything()
             self.dispatch_event('on_cheat', 1)
-        if symbol == pyglet.window.key.X:
+        if symbol == key.X:
             self.hand.drop_everything()
             self.dispatch_event('on_cheat', 100)
-        if symbol == pyglet.window.key.SPACE:
+        if symbol == key.SPACE:
             self.hand.mouse_up()
             pids = list(self.hand.pieces)
             if len(pids) > 0:
                 self.dispatch_event('on_view_spread_out', pids)
-        if symbol == pyglet.window.key.ESCAPE:
+        if symbol == key.ESCAPE:
             self.hand.drop_everything()
-        if symbol == pyglet.window.key.R and \
-                modifiers & pyglet.window.key.MOD_CTRL:
+        if symbol == key.R and modifiers & key.MOD_CTRL:
             select_image(callback=self.new_jigsaw, image_path=self.image_path)
-        if symbol == pyglet.window.key.F5:
+        if symbol == key.F5:
             self.dispatch_event('on_quicksave')
-        if symbol == pyglet.window.key.F9:
+        if symbol == key.F9:
             self.dispatch_event('on_quickload')
 
         if _is_digit_key(symbol):
             tray = _digit_from_key(symbol)
-            if modifiers & pyglet.window.key.MOD_CTRL:
+            if modifiers & key.MOD_CTRL:
                 self.dispatch_event('on_toggle_visibility', tray)
             else:
                 self._move_pieces_to_tray(list(self.hand.pieces), tray)
@@ -709,7 +708,7 @@ class SelectionBox:
         self.z = MAX_Z_DEPTH
 
         self.vertex_list = self.batch.add(
-            4, pyglet.gl.GL_LINE_LOOP, self.group,
+            4, gl.GL_LINE_LOOP, self.group,
             ('position3f/dynamic', (0,) * 12),
             ('colors3B/static', (255,) * 12)
         )
@@ -849,11 +848,11 @@ class Hand(pyglet.window.EventDispatcher):
 
 
 def _is_digit_key(symbol):
-    return pyglet.window.key._0 <= symbol <= pyglet.window.key._9
+    return key._0 <= symbol <= key._9
 
 
 def _digit_from_key(symbol):
-    return symbol - pyglet.window.key._0
+    return symbol - key._0
 
 
 View.register_event_type('on_mouse_down')

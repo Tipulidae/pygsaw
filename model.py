@@ -7,7 +7,6 @@ from typing import List, Set, Dict
 from pyglet.window import EventDispatcher
 from tqdm import tqdm
 from pyqtree import Index as QuadTree
-from dataclasses_json import dataclass_json
 
 from bezier import Point, Rectangle, make_random_edges, bounding_box, \
     point_in_polygon
