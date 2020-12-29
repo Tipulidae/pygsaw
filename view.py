@@ -1,5 +1,6 @@
 import time
 import itertools
+import glob
 
 import pyglet
 import pyglet.gl as gl
@@ -9,7 +10,7 @@ from tqdm import tqdm
 from pyglet.math import Mat4
 
 import earcut
-from shaders import make_piece_shader, make_shape_shader
+from shaders import make_piece_shader, make_shape_shader, make_table_shader
 from textures import make_normal_map
 from file_picker import select_image
 
@@ -101,6 +102,43 @@ class PieceGroup(pyglet.graphics.Group):
         gl.glDisable(gl.GL_BLEND)
         gl.glBindTexture(self.texture.target, 0)
         gl.glBindTexture(self.normal_map.target, 0)
+        self.program.stop()
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}()"
+
+    def __eq__(self, other):
+        return (other.__class__ is self.__class__ and
+                self.program is other.program and
+                self.parent is other.parent)
+
+    def __hash__(self):
+        return hash((id(self.parent), id(self.program)))
+
+
+class TableGroup(pyglet.graphics.Group):
+    def __init__(self, texture, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.texture = texture
+        self.program = make_table_shader()
+        self.program.use()
+        self.program['diffuse_map'] = 0
+        self.program.stop()
+
+    def set_state(self):
+        self.program.use()
+        gl.glActiveTexture(gl.GL_TEXTURE0)
+        gl.glBindTexture(self.texture.target, self.texture.id)
+        # gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_WRAP_S,
+        #                    gl.GL_MIRRORED_REPEAT)
+        # gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_WRAP_T,
+        #                    gl.GL_MIRRORED_REPEAT)
+        gl.glEnable(gl.GL_DEPTH_TEST)
+        gl.glDepthFunc(gl.GL_LESS)
+
+    def unset_state(self):
+        gl.glDisable(gl.GL_BLEND)
+        gl.glBindTexture(self.texture.target, 0)
         self.program.stop()
 
     def __repr__(self):
@@ -322,6 +360,8 @@ class View(pyglet.window.EventDispatcher):
         self.texture = None
         self.normal_map = None
 
+        self.table = Table(self.window.batch)
+
         self.reset(texture, piece_data, visible_trays)
 
         global PIECE_THRESHOLD
@@ -362,6 +402,8 @@ class View(pyglet.window.EventDispatcher):
         for piece in self.pieces.values():
             for vl in piece.vertex_list:
                 vl.delete()
+
+        self.table.destroy_table()
 
     def new_jigsaw(self, image_path, num_pieces):
         self.hand.drop_everything()
@@ -433,6 +475,8 @@ class View(pyglet.window.EventDispatcher):
             pids = list(self.hand.pieces)
             if len(pids) > 0:
                 self.dispatch_event('on_view_spread_out', pids)
+        if symbol == key.T:
+            self.table.cycle_texture()
         if symbol == key.ESCAPE:
             self.hand.drop_everything()
         if symbol == key.R and modifiers & key.MOD_CTRL:
@@ -697,6 +741,60 @@ class Piece:
                 self._group,
                 self.batch
             )
+
+
+class Table:
+    def __init__(self, batch):
+        self.batch = batch
+        self.image_paths = glob.glob('resources/textures/*.jpg')
+        self.index = 0
+        self.group = TableGroup(None)
+        self.vertex_list = None
+        self.create_table()
+
+    def cycle_texture(self):
+        self.index = (self.index + 1) % len(self.image_paths)
+        self.destroy_table()
+        self.create_table()
+
+    def destroy_table(self):
+        self.vertex_list.delete()
+
+    def create_table(self):
+        image_path = self.image_paths[self.index]
+        texture = pyglet.image.load(image_path).get_texture()
+        self.group.texture = texture
+
+        table_width = 32768
+        table_height = 32768
+        original_vertices = [
+            -table_width/2, -table_height/2, -1,
+            table_width/2, -table_height/2, -1,
+            table_width/2, table_height/2, -1,
+            -table_width/2, table_height/2, -1
+        ]
+        indices = [
+            0, 1, 2, 0, 2, 3
+        ]
+        tex_coords = [
+            0, 0, 0,
+            table_width/texture.width, 0, 0,
+            table_width/texture.width, table_height/texture.height, 0,
+            0, table_height/texture.height, 0
+        ]
+
+        n = len(original_vertices) // 3
+
+        self.vertex_list = self.batch.add_indexed(
+            n,
+            pyglet.gl.GL_TRIANGLES,
+            self.group,
+            indices,
+            ('position3f/static', tuple(original_vertices)),
+            ('colors4Bn/static', (255, 255, 255, 255) * n),
+            ('tex_coords3f/static', tuple(tex_coords))
+        )
+
 
 
 class SelectionBox:

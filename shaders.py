@@ -98,6 +98,43 @@ shape_fs = """#version 330 core
 """
 
 
+table_vs = """#version 330 core
+    in vec4 position;
+    in vec4 colors;
+    in vec3 tex_coords;
+
+    out vec4 vertex_colors;
+    out vec3 texture_coords;
+
+    uniform WindowBlock
+    {
+        mat4 projection;
+        mat4 view;
+    } window;  
+
+    void main()
+    {
+        texture_coords = tex_coords;
+        vertex_colors = colors;
+        gl_Position = window.projection * window.view * position;
+    }
+"""
+
+table_fs = """#version 330 core
+    in vec4 vertex_colors;
+    in vec3 texture_coords;
+    out vec4 final_colors;
+
+    uniform sampler2D diffuse_map;
+
+    void main()
+    {
+        vec3 color = texture(diffuse_map, texture_coords.xy).rgb;
+        final_colors = vec4(color, 1.0) * vertex_colors;
+    }
+"""
+
+
 piece_vertex_shader = None
 piece_fragment_shader = None
 
@@ -117,6 +154,13 @@ def make_shape_shader():
     vs = Shader(shape_vs, 'vertex')
     fs = Shader(shape_fs, 'fragment')
     return ShaderProgram(vs, fs)
+
+
+def make_table_shader():
+    vs = Shader(table_vs, 'vertex')
+    fs = Shader(table_fs, 'fragment')
+    return ShaderProgram(vs, fs)
+
 
 
 def write_to_uniform(program, name, data):
