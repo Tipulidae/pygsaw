@@ -6,6 +6,7 @@ import pyglet.gl as gl
 import pyglet.window.key as key
 import vecrec
 from tqdm import tqdm
+from pyglet.math import Mat4
 
 import earcut
 from shaders import make_piece_shader, make_shape_shader
@@ -197,7 +198,7 @@ class OrthographicProjection(pyglet.window.EventDispatcher):
         pyglet.gl.glViewport(0, 0, width, height)
 
         with self.program.uniform_buffers['WindowBlock'] as window_block:
-            window_block.projection[:] = pyglet.math.create_orthogonal(
+            window_block.projection[:] = Mat4.orthogonal_projection(
                 self.clip_port.left,
                 self.clip_port.right,
                 self.clip_port.bottom,
@@ -206,7 +207,7 @@ class OrthographicProjection(pyglet.window.EventDispatcher):
                 MAX_Z_DEPTH)
             if not self._view:
                 # Set view to Identity Matrix
-                self._view = pyglet.math.Mat4()
+                self._view = Mat4()
                 window_block.view[:] = self._view
 
 
