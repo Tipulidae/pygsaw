@@ -1,15 +1,18 @@
 import re
+import random
+from glob import glob
+from pathlib import Path
+
 import tkinter as tk
-from tkinter.filedialog import askopenfilename
+from tkinter.filedialog import askopenfilename, askdirectory
 
 
 class FilePicker(tk.Frame):
-    def __init__(self, *args, callback=None, image_path='None', **kwargs):
+    def __init__(self, *args, callback=None, image_path='resources', **kwargs):
         super().__init__(*args, **kwargs)
         self.pack()
         self.pattern = re.compile('$|^[1-9][0-9]*')
         self.image_path = image_path
-
         self.image_label = None
         self.num_pieces = tk.IntVar(value=200)
         self.create_widgets()
@@ -20,6 +23,11 @@ class FilePicker(tk.Frame):
             self,
             text='Select Image',
             command=self.select_image
+        ).pack()
+        tk.Button(
+            self,
+            text='Random',
+            command=self.random
         ).pack()
         self.image_label = tk.Label(text=self.image_path)
         self.image_label.pack()
@@ -43,9 +51,21 @@ class FilePicker(tk.Frame):
 
     def select_image(self):
         self.image_path = askopenfilename(
-            filetypes=[('*', 'jpg'), ('*', 'png')]
+            filetypes=[('*', 'jpg'), ('*', 'jpeg'), ('*', 'png')],
+            initialdir=' '  # This will remember the previously used path
         )
         self.image_label['text'] = self.image_path
+
+    def random(self):
+        random_folder = Path(self.image_path).parent
+        files = []
+        for filetype in ['jpg', 'jpeg', 'png']:
+            files.extend(glob(f"{random_folder}/*.{filetype}"))
+
+        if len(files) > 0:
+            index = random.randrange(0, len(files))
+            self.image_path = files[index]
+            self.image_label['text'] = self.image_path
 
     def done(self):
         self.callback(
