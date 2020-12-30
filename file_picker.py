@@ -4,7 +4,7 @@ from glob import glob
 from pathlib import Path
 
 import tkinter as tk
-from tkinter.filedialog import askopenfilename, askdirectory
+from tkinter.filedialog import askopenfilename
 
 
 class FilePicker(tk.Frame):
