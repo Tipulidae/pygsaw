@@ -263,6 +263,7 @@ class Jigsaw(pyglet.window.Window):
         self.keys = key.KeyStateHandler()
         self.push_handlers(self.keys)
         self.is_panning = False
+        self.is_paused = False
 
     def on_resize(self, width, height):
         self.my_projection.change_window_size(
@@ -276,9 +277,19 @@ class Jigsaw(pyglet.window.Window):
 
     def on_draw(self):
         self.clear()
-        self.batch.draw()
+        if not self.is_paused:
+            self.batch.draw()
+
+    def toggle_pause(self, is_paused):
+        self.is_paused = is_paused
+        if is_paused:
+            pyglet.clock.unschedule(self.update)
+            self.is_panning = False
 
     def on_mouse_scroll(self, x, y, scroll_x, scroll_y):
+        if self.is_paused:
+            return
+
         if scroll_y > 0:
             self.my_projection.zoom(1.25, x, y)
         elif scroll_y < 0:
@@ -296,6 +307,9 @@ class Jigsaw(pyglet.window.Window):
             self.my_projection.pan(self.pan_speed * dt, 0)
 
     def on_key_press(self, symbol, modifiers):
+        if self.is_paused:
+            return
+
         if not self.is_panning and symbol in PAN_KEYS:
             pyglet.clock.schedule_interval(self.update, 1 / 120)
             self.is_panning = True
@@ -359,6 +373,7 @@ class View(pyglet.window.EventDispatcher):
         self.number_keys = NumberKeys()
         self.texture = None
         self.normal_map = None
+        self.is_paused = False
 
         self.table = Table(self.window.batch)
 
@@ -427,6 +442,14 @@ class View(pyglet.window.EventDispatcher):
         )
         self.hand.group.z += len(polygons)
 
+    def toggle_pause(self, is_paused):
+        self.window.toggle_pause(is_paused)
+        self.is_paused = is_paused
+        if is_paused:
+            if self.hand.is_mouse_down:
+                self.hand.mouse_up()
+                self.selection_box.deactivate()
+
     def on_mouse_press(self, x_, y_, button, modifiers):
         """
         The x_, y_ tuple is the view coordinates of the mouse pointer, in
@@ -435,12 +458,17 @@ class View(pyglet.window.EventDispatcher):
         zoomed and/or panned, the view coordinates will differ from the clip-
         coordinates, which correspond to the "actual" coordinates in the model.
         """
+        if self.is_paused:
+            return
         x, y = self.projection.view_to_clip_coord(x_, y_)
         is_shift = modifiers & key.MOD_SHIFT
         self.dispatch_event('on_mouse_down', x, y, is_shift)
         self.hand.is_mouse_down = True
 
     def on_mouse_release(self, x_, y_, button, modifiers):
+        if self.is_paused:
+            return
+
         self.hand.is_mouse_down = False
         if self.selection_box.is_active:
             x, y = self.projection.view_to_clip_coord(x_, y_)
@@ -454,6 +482,9 @@ class View(pyglet.window.EventDispatcher):
             self.hand.mouse_up()
 
     def on_mouse_drag(self, x_, y_, dx_, dy_, buttons, modifiers):
+        if self.is_paused:
+            return
+
         if self.selection_box.is_active:
             x, y = self.projection.view_to_clip_coord(x_, y_)
             self.selection_box.drag_to(x, y)
@@ -463,6 +494,14 @@ class View(pyglet.window.EventDispatcher):
             self.hand.move(dx, dy)
 
     def on_key_press(self, symbol, modifiers):
+        if symbol == key.PAUSE:
+            self.dispatch_event('on_pause', not self.is_paused)
+        if symbol == key.R and modifiers & key.MOD_CTRL:
+            select_image(callback=self.new_jigsaw, image_path=self.image_path)
+
+        if self.is_paused:
+            return
+
         self.number_keys.press(symbol)
         if symbol == key.C:
             self.hand.drop_everything()
@@ -479,13 +518,12 @@ class View(pyglet.window.EventDispatcher):
             self.table.cycle_texture()
         if symbol == key.ESCAPE:
             self.hand.drop_everything()
-        if symbol == key.R and modifiers & key.MOD_CTRL:
-            select_image(callback=self.new_jigsaw, image_path=self.image_path)
         if symbol == key.F5:
             self.dispatch_event('on_quicksave')
         if symbol == key.F9:
             self.dispatch_event('on_quickload')
-
+        if symbol == key.PERIOD:
+            self.dispatch_event('on_timer')
         if _is_digit_key(symbol):
             tray = _digit_from_key(symbol)
             if modifiers & key.MOD_CTRL:
@@ -796,7 +834,6 @@ class Table:
         )
 
 
-
 class SelectionBox:
     def __init__(self, batch):
         self.is_active = False
@@ -965,6 +1002,8 @@ View.register_event_type('on_view_spread_out')
 View.register_event_type('on_new_game')
 View.register_event_type('on_quicksave')
 View.register_event_type('on_quickload')
+View.register_event_type('on_pause')
+View.register_event_type('on_timer')
 
 Hand.register_event_type('on_view_pieces_moved')
 Hand.register_event_type('on_view_select_pieces')

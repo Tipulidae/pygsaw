@@ -1,6 +1,7 @@
 import math
 import random
 import itertools
+import time
 from dataclasses import dataclass
 from typing import List, Set, Dict
 
@@ -24,6 +25,7 @@ class Model(EventDispatcher):
         self.trays = None
         self.quadtree = None
         self.current_max_z_level = 0
+        self.timer = Timer()
 
     def reset(
             self,
@@ -49,6 +51,7 @@ class Model(EventDispatcher):
             self.quadtree.insert(piece, piece.bbox)
 
         self.current_max_z_level = self.num_pieces
+        self.timer.reset()
 
     def to_dict(self):
         return {
@@ -60,7 +63,8 @@ class Model(EventDispatcher):
             'num_pieces': self.num_pieces,
             'image_width': self.image_width,
             'image_height': self.image_height,
-            'snap_distance': self.snap_distance
+            'snap_distance': self.snap_distance,
+            'elapsed_seconds': self.timer.elapsed_seconds,
         }
 
     @classmethod
@@ -75,6 +79,7 @@ class Model(EventDispatcher):
         model.image_height = data['image_height']
         model.snap_distance = data['snap_distance']
         model.current_max_z_level = data['current_max_z_level']
+        model.timer = Timer(data['elapsed_seconds'])
         model.quadtree = QuadTree(bbox=(-100000, -100000, 100000, 100000))
         for piece in tqdm(model.pieces.values(), desc="Building quad-tree"):
             model.quadtree.insert(piece, piece.bbox)
@@ -250,6 +255,12 @@ class Model(EventDispatcher):
             self.trays.hidden_pieces
         )
 
+    def toggle_pause(self, is_paused):
+        if is_paused:
+            self.timer.pause()
+        else:
+            self.timer.start()
+
     def _tray_is_visible(self, tray):
         return tray in self.trays.visible_trays
 
@@ -297,7 +308,7 @@ class Model(EventDispatcher):
             self.image_width == other.image_width,
             self.trays == other.trays,
             self.snap_distance == other.snap_distance,
-            self.quadtree == other.quadtree
+            self.quadtree == other.quadtree,
         )
 
 
@@ -434,6 +445,37 @@ class Tray:
             self.visible_trays == other.visible_trays and
             self.pid_to_tray == other.pid_to_tray
         )
+
+
+class Timer:
+    def __init__(self, elapsed_seconds=0):
+        self.seconds = elapsed_seconds
+        self.start_time = 0
+        self.is_running = False
+
+    def start(self):
+        self.is_running = True
+        self.start_time = time.time()
+
+    def pause(self):
+        self.update()
+        self.is_running = False
+
+    def reset(self):
+        self.is_running = False
+        self.seconds = 0
+        self.start_time = 0
+
+    def update(self):
+        if self.is_running:
+            current_time = time.time()
+            self.seconds += current_time - self.start_time
+            self.start_time = current_time
+
+    @property
+    def elapsed_seconds(self):
+        self.update()
+        return self.seconds
 
 
 def make_jigsaw_cut(image_width, image_height, nx, ny):

@@ -39,6 +39,9 @@ class Controller:
         self.view.push_handlers(self)
         self.view.hand.push_handlers(self)
 
+        self.model.toggle_pause(False)
+        self.view.toggle_pause(False)
+
     def on_new_game(self, image_path, num_pieces):
         self.window.pop_handlers()
         self.view.destroy_pieces()
@@ -82,6 +85,7 @@ class Controller:
         self.model.push_handlers(self)
         self.view.push_handlers(self)
         self.view.hand.push_handlers(self)
+        self.model.timer.start()
 
     def on_mouse_down(self, x, y, is_shift):
         if (piece := self.model.piece_at_coordinate(x, y)) is not None:
@@ -128,6 +132,13 @@ class Controller:
     def on_visibility_changed(self, tray, is_visible, hidden_pieces):
         self.view.set_visibility(tray, is_visible)
         self.view.drop_specific_pieces_from_hand(hidden_pieces)
+
+    def on_timer(self):
+        print(self.model.timer.elapsed_seconds)
+
+    def on_pause(self, is_paused):
+        self.model.toggle_pause(is_paused)
+        self.view.toggle_pause(is_paused)
 
 
 def _most_recently_modified_file_in_folder(path):
