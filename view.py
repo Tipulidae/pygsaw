@@ -10,7 +10,7 @@ from tqdm import tqdm
 from pyglet.math import Mat4
 
 import earcut
-from shaders import make_piece_shader, make_shape_shader, make_table_shader
+from shaders import make_piece_shader, make_shape_shader, make_table_shader, make_menu_shader
 from textures import make_normal_map
 from file_picker import select_image
 
@@ -139,6 +139,33 @@ class TableGroup(pyglet.graphics.Group):
     def unset_state(self):
         gl.glDisable(gl.GL_BLEND)
         gl.glBindTexture(self.texture.target, 0)
+        self.program.stop()
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}()"
+
+    def __eq__(self, other):
+        return (other.__class__ is self.__class__ and
+                self.program is other.program and
+                self.parent is other.parent)
+
+    def __hash__(self):
+        return hash((id(self.parent), id(self.program)))
+
+
+class MenuGroup(pyglet.graphics.Group):
+    def __init__(self, texture, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.texture = texture
+        self.program = make_menu_shader()
+
+    def set_state(self):
+        self.program.use()
+        gl.glEnable(gl.GL_DEPTH_TEST)
+        gl.glDepthFunc(gl.GL_LESS)
+
+    def unset_state(self):
+        gl.glDisable(gl.GL_BLEND)
         self.program.stop()
 
     def __repr__(self):
@@ -361,6 +388,7 @@ class View(pyglet.window.EventDispatcher):
         self.normal_map = None
 
         self.table = Table(self.window.batch)
+        # self.menu = Menu(self.window.batch)
 
         self.reset(texture, piece_data, visible_trays)
 
@@ -795,6 +823,39 @@ class Table:
             ('tex_coords3f/static', tuple(tex_coords))
         )
 
+
+class Menu:
+    def __init__(self, batch):
+        self.batch = batch
+        self.group = MenuGroup(None)
+        self.vertex_list = None
+        self.text = None
+        self.create_table()
+
+    def create_table(self):
+        original_vertices = [
+            0.1, 0.1, 0.0,
+            0.5, 0.1, 0.0,
+            0.5, 0.5, 0.0,
+            0.1, 0.5, 0.0
+        ]
+        indices = [
+            0, 1, 2, 0, 2, 3
+        ]
+
+        n = len(original_vertices) // 3
+
+        self.vertex_list = self.batch.add_indexed(
+            n,
+            pyglet.gl.GL_TRIANGLES,
+            self.group,
+            indices,
+            ('vertices3f/static', tuple(original_vertices)),
+            ('colors4Bn/static', (255, 255, 255, 255) * n),
+        )
+
+        self.text = pyglet.text.Label(
+            text='Hello', x=0, y=0, batch=self.batch, group=self.group)
 
 
 class SelectionBox:

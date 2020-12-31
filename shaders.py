@@ -135,6 +135,51 @@ table_fs = """#version 330 core
 """
 
 
+menu_vs = """#version 330 core
+    in vec4 vertices;
+    in vec4 colors;
+    in vec2 tex_coords;
+    out vec4 vertex_colors;
+    out vec2 texture_coords;
+
+    uniform WindowBlock
+    {
+        mat4 projection;
+        mat4 view;
+    } window;  
+
+
+    void main()
+    {
+        // With this projection, the vertex coordinates are scaled so that 
+        // the screen width and height is between 0 and 1.
+        mat4 projection = mat4(
+            vec4(2.0, 0.0, 0.0, 0.0),
+            vec4(0.0, 2.0, 0.0, 0.0),
+            vec4(0.0, 0.0, 0.0, 0.0),
+            vec4(-1.0, -1.0, 0.0, 1.0)
+        );
+        gl_Position = projection * vertices;
+
+        vertex_colors = colors;
+        texture_coords = tex_coords;
+    }
+"""
+
+menu_fs = """#version 330 core
+    in vec4 vertex_colors;
+    in vec2 texture_coords;
+    out vec4 final_colors;
+
+    uniform sampler2D our_texture;
+
+    void main()
+    {
+        final_colors = texture(our_texture, texture_coords) + vertex_colors;
+    }
+"""
+
+
 piece_vertex_shader = None
 piece_fragment_shader = None
 
@@ -161,6 +206,11 @@ def make_table_shader():
     fs = Shader(table_fs, 'fragment')
     return ShaderProgram(vs, fs)
 
+
+def make_menu_shader():
+    vs = Shader(menu_vs, 'vertex')
+    fs = Shader(menu_fs, 'fragment')
+    return ShaderProgram(vs, fs)
 
 
 def write_to_uniform(program, name, data):
