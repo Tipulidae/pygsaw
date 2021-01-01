@@ -26,6 +26,20 @@ PAN_KEYS = [key.W, key.A, key.S, key.D]
 class PieceGroupFactory:
     default_groups = dict()
     big_groups = {tray: set() for tray in range(10)}
+    hand_group = None
+
+    @staticmethod
+    def init_groups(texture, normal_map, visible_trays):
+        PieceGroupFactory.default_groups = {
+            tray: PieceGroup(texture, normal_map, tray=tray)
+            for tray in range(10)
+        }
+        PieceGroupFactory.big_groups = {tray: set() for tray in range(10)}
+        for tray in range(10):
+            is_visible = tray in visible_trays
+            PieceGroupFactory.toggle_visibility(tray, is_visible=is_visible)
+
+        PieceGroupFactory.hand_group = PieceGroup(texture, normal_map)
 
     @staticmethod
     def get_piece_group(tray):
@@ -36,6 +50,17 @@ class PieceGroupFactory:
         PieceGroupFactory.default_groups[tray].set_visibility(is_visible)
         for group in PieceGroupFactory.big_groups[tray]:
             group.set_visibility(is_visible)
+
+    @staticmethod
+    def set_game_over():
+        for group in PieceGroupFactory.default_groups.values():
+            group.set_game_over()
+
+        for tray in range(10):
+            for group in PieceGroupFactory.big_groups[tray]:
+                group.set_game_over()
+
+        # PieceGroupFactory.hand_group.set_game_over()
 
     @staticmethod
     def move_to_group(group, tray):
@@ -69,6 +94,7 @@ class PieceGroup(pyglet.graphics.Group):
         self.program.use()
         self.program['diffuse_map'] = 0
         self.program['normal_map'] = 1
+        self.program['game_over'] = 0
         self.program.stop()
 
     def move(self, dx, dy, dz):
@@ -88,6 +114,11 @@ class PieceGroup(pyglet.graphics.Group):
             self.program['hidden'] = 0.0
         else:
             self.program['hidden'] = 1.0
+        self.program.stop()
+
+    def set_game_over(self):
+        self.program.use()
+        self.program['game_over'] = 1
         self.program.stop()
 
     def set_state(self):
@@ -397,17 +428,10 @@ class View(pyglet.window.EventDispatcher):
             piece_data[0]['height'],
         )
 
-        PieceGroupFactory.default_groups = {
-            tray: PieceGroup(texture, self.normal_map, tray=tray)
-            for tray in range(10)
-        }
-        PieceGroupFactory.big_groups = {tray: set() for tray in range(10)}
-        for tray in range(10):
-            is_visible = tray in visible_trays
-            PieceGroupFactory.toggle_visibility(tray, is_visible=is_visible)
+        PieceGroupFactory.init_groups(texture, self.normal_map, visible_trays)
 
         self.pieces = dict()
-        self.hand = Hand(default_group=PieceGroup(texture, self.normal_map))
+        self.hand = Hand()
         self.projection.push_handlers(on_pan=self.hand.move)
         self.projection.push_handlers(on_pan=self.selection_box.drag)
 
@@ -590,6 +614,7 @@ class View(pyglet.window.EventDispatcher):
         )
 
     def game_over(self, elapsed_seconds, num_pieces):
+        PieceGroupFactory.set_game_over()
         print(
             f"Congratulations, you won! \n"
             f"Image: {self.image_path}, "
@@ -898,10 +923,8 @@ class SelectionBox:
 
 
 class Hand(pyglet.window.EventDispatcher):
-    def __init__(self, default_group):
-        self.group = PieceGroup(
-            default_group.texture,
-            default_group.normal_map)
+    def __init__(self):
+        self.group = PieceGroupFactory.hand_group
         self.pieces = dict()
         self.step = (0, 0)
         self.is_mouse_down = True
