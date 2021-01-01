@@ -542,6 +542,7 @@ class View(pyglet.window.EventDispatcher):
         if symbol == key.T:
             self.table.cycle_texture()
         if symbol == key.ESCAPE:
+            self.hand.mouse_up()
             self.hand.drop_everything()
         if symbol == key.F5:
             self.dispatch_event('on_quicksave')
