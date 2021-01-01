@@ -27,6 +27,7 @@ class PieceGroupFactory:
     default_groups = dict()
     big_groups = {tray: set() for tray in range(10)}
     hand_group = None
+    _hide_borders = False
 
     @staticmethod
     def init_groups(texture, normal_map, visible_trays):
@@ -52,15 +53,21 @@ class PieceGroupFactory:
             group.set_visibility(is_visible)
 
     @staticmethod
-    def set_game_over():
+    def invert_border_visibility():
+        hide_borders = not PieceGroupFactory._hide_borders
+        PieceGroupFactory.set_border_visibility(hide_borders)
+
+    @staticmethod
+    def set_border_visibility(hide_borders=False):
+        PieceGroupFactory._hide_borders = hide_borders
         for group in PieceGroupFactory.default_groups.values():
-            group.set_game_over()
+            group.set_border_visibility(hide_borders)
 
         for tray in range(10):
             for group in PieceGroupFactory.big_groups[tray]:
-                group.set_game_over()
+                group.set_border_visibility(hide_borders)
 
-        # PieceGroupFactory.hand_group.set_game_over()
+        PieceGroupFactory.hand_group.set_border_visibility(hide_borders)
 
     @staticmethod
     def move_to_group(group, tray):
@@ -94,7 +101,7 @@ class PieceGroup(pyglet.graphics.Group):
         self.program.use()
         self.program['diffuse_map'] = 0
         self.program['normal_map'] = 1
-        self.program['game_over'] = 0
+        self.program['hide_borders'] = 0
         self.program.stop()
 
     def move(self, dx, dy, dz):
@@ -116,9 +123,9 @@ class PieceGroup(pyglet.graphics.Group):
             self.program['hidden'] = 1.0
         self.program.stop()
 
-    def set_game_over(self):
+    def set_border_visibility(self, hide_border):
         self.program.use()
-        self.program['game_over'] = 1
+        self.program['hide_borders'] = 1 if hide_border else 0
         self.program.stop()
 
     def set_state(self):
@@ -140,9 +147,11 @@ class PieceGroup(pyglet.graphics.Group):
         return f"{self.__class__.__name__}()"
 
     def __eq__(self, other):
-        return (other.__class__ is self.__class__ and
-                self.program is other.program and
-                self.parent is other.parent)
+        return (
+            other.__class__ is self.__class__ and
+            self.program is other.program and
+            self.parent is other.parent
+        )
 
     def __hash__(self):
         return hash((id(self.parent), id(self.program)))
@@ -550,6 +559,8 @@ class View(pyglet.window.EventDispatcher):
             self.dispatch_event('on_quickload')
         if symbol == key.PERIOD:
             self.dispatch_event('on_info')
+        if symbol == key.COMMA:
+            PieceGroupFactory.invert_border_visibility()
         if _is_digit_key(symbol):
             tray = _digit_from_key(symbol)
             if modifiers & key.MOD_CTRL:
@@ -615,7 +626,7 @@ class View(pyglet.window.EventDispatcher):
         )
 
     def game_over(self, elapsed_seconds, num_pieces):
-        PieceGroupFactory.set_game_over()
+        PieceGroupFactory.set_border_visibility(hide_borders=True)
         print(
             f"Congratulations, you won! \n"
             f"Image: {self.image_path}, "

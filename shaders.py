@@ -42,7 +42,7 @@ piece_fs = """#version 330 core
 
     uniform sampler2D diffuse_map;
     uniform sampler2D normal_map;
-    uniform float game_over;
+    uniform float hide_borders;
 
     void main()
     {
@@ -51,7 +51,7 @@ piece_fs = """#version 330 core
         // TBN matrix directly (it should be the identity matrix). 
         // Credits to https://learnopengl.com/Advanced-Lighting/Normal-Mapping
         vec3 color = texture(diffuse_map, texture_coords.xy).rgb;
-        if (game_over > 0.0) {
+        if (hide_borders > 0.0) {
             final_colors = vec4(color, 1);
         } else {
         
