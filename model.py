@@ -294,8 +294,8 @@ class Model(EventDispatcher):
             p1.pid,
             p2.pid
         )
-        if len(self.pieces) == 1:
-            self.dispatch_event('on_win', self.elapsed_seconds, self.num_pieces)
+
+        self._check_game_over()
 
     def _pieces_at_location(self, x, y):
         for piece in self.quadtree.intersect(bbox=(x, y, x, y)):
@@ -308,6 +308,11 @@ class Model(EventDispatcher):
             key=(lambda p: p.z),
             default=None
         )
+
+    def _check_game_over(self):
+        if len(self.pieces) == 1:
+            self.timer.pause()
+            self.dispatch_event('on_win', self.elapsed_seconds, self.num_pieces)
 
     def __eq__(self, other):
         return (
