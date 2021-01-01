@@ -21,11 +21,12 @@ class Controller:
             puzzle_settings['num_pieces'],
         )
 
-    def _new_puzzle(self, image_path, num_pieces):
+    def _new_puzzle(self, image_path, num_intended_pieces):
         self.image_path = image_path
         texture = pyglet.image.load(image_path).get_texture()
+
         self.model = Model()
-        self.model.reset(texture.width, texture.height, num_pieces)
+        self.model.reset(image_path, texture.width, texture.height, num_intended_pieces)
         self.view = View(
             texture,
             image_path,
@@ -49,9 +50,8 @@ class Controller:
 
     def on_quicksave(self):
         print("quicksave!")
-        data = {"path": self.image_path, "model": self.model.to_dict()}
         dump(
-            obj=data,
+            obj=self.model.to_dict(),
             path=f'.savegame/'
                  f'{os.path.basename(self.image_path)[:-4]}_'
                  f'{self.model.num_pieces}.sav',
@@ -69,8 +69,8 @@ class Controller:
             compression='bz2',
             set_default_extension=False
         )
-        self.model = Model.from_dict(data['model'])
-        self.image_path = data['path']
+        self.model = Model.from_dict(data)
+        self.image_path = data['image_path']
         texture = pyglet.image.load(self.image_path).get_texture()
 
         self.view = View(

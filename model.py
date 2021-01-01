@@ -2,6 +2,7 @@ import math
 import random
 import itertools
 import time
+from datetime import datetime
 from dataclasses import dataclass
 from typing import List, Set, Dict
 
@@ -9,6 +10,7 @@ from pyglet.window import EventDispatcher
 from tqdm import tqdm
 from pyqtree import Index as QuadTree
 
+from database import save_statistics
 from bezier import Point, Rectangle, make_random_edges, bounding_box, \
     point_in_polygon
 
@@ -18,6 +20,8 @@ class Model(EventDispatcher):
         self.nx = 0
         self.ny = 0
         self.num_pieces = 0
+        self.num_intended_pieces = 0
+        self.image_path = None
         self.image_width = 0
         self.image_height = 0
         self.snap_distance = 0
@@ -26,19 +30,25 @@ class Model(EventDispatcher):
         self.quadtree = None
         self.current_max_z_level = 0
         self.timer = Timer()
+        self.cheated = False
+        self.start_time = datetime.now()
 
     def reset(
             self,
+            image_path,
             image_width,
             image_height,
-            num_pieces,
+            num_intended_pieces,
             snap_distance_percent=0.5):
+        self.image_path = image_path
         self.image_width = image_width
         self.image_height = image_height
+        self.num_intended_pieces = num_intended_pieces
         self.nx, self.ny, self.num_pieces = create_jigsaw_dimensions(
-            num_pieces, image_width, image_height
+            num_intended_pieces, image_width, image_height
         )
         self.snap_distance = snap_distance_percent * image_width / self.nx
+        self.cheated = False
         self.pieces = make_jigsaw_cut(
             self.image_width,
             self.image_height,
@@ -52,9 +62,11 @@ class Model(EventDispatcher):
 
         self.current_max_z_level = self.num_pieces
         self.timer.reset()
+        self.start_time = datetime.now()
 
     def to_dict(self):
         return {
+            'image_path': self.image_path,
             'pieces': self.pieces,
             'trays': self.trays,
             'current_max_z_level': self.current_max_z_level,
@@ -65,11 +77,14 @@ class Model(EventDispatcher):
             'image_height': self.image_height,
             'snap_distance': self.snap_distance,
             'elapsed_seconds': self.elapsed_seconds,
+            'cheated': self.cheated,
+            'start_time': self.start_time
         }
 
     @classmethod
     def from_dict(cls, data):
         model = cls()
+        model.image_path = data['image_path']
         model.pieces = data['pieces']
         model.trays = data['trays']
         model.nx = data['nx']
@@ -80,6 +95,8 @@ class Model(EventDispatcher):
         model.snap_distance = data['snap_distance']
         model.current_max_z_level = data['current_max_z_level']
         model.timer = Timer(data['elapsed_seconds'])
+        model.cheated = data['cheated']
+        model.start_time = data['start_time']
         model.quadtree = QuadTree(bbox=(-100000, -100000, 100000, 100000))
         for piece in tqdm(model.pieces.values(), desc="Building quad-tree"):
             model.quadtree.insert(piece, piece.bbox)
@@ -101,6 +118,7 @@ class Model(EventDispatcher):
         ))
 
     def merge_random_pieces(self, n):
+        self.cheated = True
         n = min(n, len(self.pieces) - 1)
         for _ in range(n):
             piece = random.choice(list(self.pieces.values()))
@@ -313,6 +331,18 @@ class Model(EventDispatcher):
         if len(self.pieces) == 1:
             self.timer.pause()
             self.dispatch_event('on_win', self.elapsed_seconds, self.num_pieces)
+            save_statistics(
+                image_path=self.image_path,
+                num_pieces=self.num_pieces,
+                num_intended_pieces=self.num_intended_pieces,
+                image_width=self.image_width,
+                image_height=self.image_height,
+                snap_distance=self.snap_distance,
+                start_time=self.start_time,
+                piece_rotation=False,
+                cheated=self.cheated,
+                elapsed_seconds=self.elapsed_seconds
+            )
 
     def __eq__(self, other):
         return (
