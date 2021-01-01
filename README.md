@@ -28,26 +28,31 @@ outlined below.
 * Good performance with large number of pieces (can easily handle 10000 pieces
  or more)
 * Unlimited surface area to build on
-* Pan with wasd keys
+* Pan with WASD keys
 * Zoom with mouse scroll wheel
 * Select multiple pieces by holding shift and dragging
-* Piecese "snap" together when close to a neighbour
+* Pieces "snap" together when close to a neighbour
 * Organize pieces into "trays": clicking a piece while a number key is pressed will move that piece to the corresponding tray. Pressing ctrl+number key will toggle the visibility of all the pieces in the corresponding tray. Hidden pieces can't be interacted with.
-* Spacebar will organize all selected "single" pieces into a "grid"
-* Ctrl+r to create a new game. Select any jpg or png image from your computer to use as jigsaw image. You can select the number of pieces to use in the dialog box. 
-* Cheat-buttons for debugging: c will connect two random pieces, x will connect 100 random pieces.
+* Press SPACEBAR to organize all selected "single" pieces into a nice "grid"
+* Press Ctrl+R to create a new game. Select any jpg or png image from your computer to use as jigsaw image. You can select the number of pieces to use in the dialog box. Press the random button to pick a random image from the last used folder.
+* Cheat-buttons for debugging: C will connect two random pieces, X will connect 100 random pieces.
 * Save game with F5
 * Load the most recently saved game with F9
+* Press PAUSE key to pause the game. This will hide all the pieces, stop the timer and disable user inputs. Press PAUSE again to unpause.
+* Press PERIOD (.) to print your current progress and how long you've been building the current puzzle.
+* Press COMMA (,) to toggle piece edges. 
+* Press T to toggle between background images. You can add your own background images by placing them in the resources/textures folder.
+* When the game is over, a victory message is printed with some stats. 
 
 ## Planned features
 * Better saving/loading (specify which file to load, and name of the save file)
 * Piece rotation - allowing pieces to be rotated.
-* Timer, pause button, progress bar, victory screen
 * Image preview
 * Background image
 * Tray visualization, visibility indicator
 * Nice(r) user interface
 * Better looking pieces
+* Configurable keybindings
 * Select images directly from pixabay or other image database
 * Random image
 * Loading screen
