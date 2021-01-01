@@ -8,6 +8,7 @@ import pyglet.window.key as key
 import vecrec
 from tqdm import tqdm
 from pyglet.math import Mat4
+from humanfriendly import format_timespan
 
 import earcut
 from shaders import make_piece_shader, make_shape_shader, make_table_shader
@@ -523,7 +524,7 @@ class View(pyglet.window.EventDispatcher):
         if symbol == key.F9:
             self.dispatch_event('on_quickload')
         if symbol == key.PERIOD:
-            self.dispatch_event('on_timer')
+            self.dispatch_event('on_info')
         if _is_digit_key(symbol):
             tray = _digit_from_key(symbol)
             if modifiers & key.MOD_CTRL:
@@ -581,6 +582,20 @@ class View(pyglet.window.EventDispatcher):
 
     def set_visibility(self, tray, is_visible):
         PieceGroupFactory.toggle_visibility(tray, is_visible)
+
+    def print_info(self, elapsed_seconds, percent_complete):
+        print(
+            f"Completed {percent_complete:.1f}% in "
+            f"{format_timespan(elapsed_seconds)}"
+        )
+
+    def game_over(self, elapsed_seconds, num_pieces):
+        print(
+            f"Congratulations, you won! \n"
+            f"Image: {self.image_path}, "
+            f"pieces: {num_pieces}, "
+            f"elapsed time: {format_timespan(elapsed_seconds)}"
+        )
 
 
 class Piece:
@@ -1003,7 +1018,7 @@ View.register_event_type('on_new_game')
 View.register_event_type('on_quicksave')
 View.register_event_type('on_quickload')
 View.register_event_type('on_pause')
-View.register_event_type('on_timer')
+View.register_event_type('on_info')
 
 Hand.register_event_type('on_view_pieces_moved')
 Hand.register_event_type('on_view_select_pieces')

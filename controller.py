@@ -133,12 +133,18 @@ class Controller:
         self.view.set_visibility(tray, is_visible)
         self.view.drop_specific_pieces_from_hand(hidden_pieces)
 
-    def on_timer(self):
-        print(self.model.timer.elapsed_seconds)
+    def on_info(self):
+        self.view.print_info(
+            elapsed_seconds=self.model.elapsed_seconds,
+            percent_complete=self.model.percent_complete
+        )
 
     def on_pause(self, is_paused):
         self.model.toggle_pause(is_paused)
         self.view.toggle_pause(is_paused)
+
+    def on_win(self, elapsed_seconds, num_pieces):
+        self.view.game_over(elapsed_seconds, num_pieces)
 
 
 def _most_recently_modified_file_in_folder(path):

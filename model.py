@@ -64,7 +64,7 @@ class Model(EventDispatcher):
             'image_width': self.image_width,
             'image_height': self.image_height,
             'snap_distance': self.snap_distance,
-            'elapsed_seconds': self.timer.elapsed_seconds,
+            'elapsed_seconds': self.elapsed_seconds,
         }
 
     @classmethod
@@ -261,6 +261,16 @@ class Model(EventDispatcher):
         else:
             self.timer.start()
 
+    @property
+    def elapsed_seconds(self):
+        return self.timer.elapsed_seconds
+
+    @property
+    def percent_complete(self):
+        total_moves = self.num_pieces - 1
+        moves_made = self.num_pieces - len(self.pieces)
+        return 100 * moves_made / total_moves
+
     def _tray_is_visible(self, tray):
         return tray in self.trays.visible_trays
 
@@ -284,6 +294,8 @@ class Model(EventDispatcher):
             p1.pid,
             p2.pid
         )
+        if len(self.pieces) == 1:
+            self.dispatch_event('on_win', self.elapsed_seconds, self.num_pieces)
 
     def _pieces_at_location(self, x, y):
         for piece in self.quadtree.intersect(bbox=(x, y, x, y)):
@@ -316,6 +328,7 @@ Model.register_event_type('on_snap_piece_to_position')
 Model.register_event_type('on_pieces_merged')
 Model.register_event_type('on_z_levels_changed')
 Model.register_event_type('on_visibility_changed')
+Model.register_event_type('on_win')
 
 
 @dataclass
