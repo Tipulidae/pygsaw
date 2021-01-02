@@ -140,3 +140,6 @@ resources/
 
 # Save files
 .savegame/
+
+# statistics
+sql/statistics.db

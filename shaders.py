@@ -42,6 +42,7 @@ piece_fs = """#version 330 core
 
     uniform sampler2D diffuse_map;
     uniform sampler2D normal_map;
+    uniform float hide_borders;
 
     void main()
     {
@@ -49,22 +50,27 @@ piece_fs = """#version 330 core
         // orthographic projection, meaning that I don't need to calculate the 
         // TBN matrix directly (it should be the identity matrix). 
         // Credits to https://learnopengl.com/Advanced-Lighting/Normal-Mapping
-        vec3 normal = texture(normal_map, texture_coords.xy).rgb;
-        normal = normalize(normal * 2.0 - 1.0);
         vec3 color = texture(diffuse_map, texture_coords.xy).rgb;
-        vec3 ambient = 0.1 * color;
-
-        vec3 light_dir = normalize(vec3(-0.5,-0.5, 1));
-        float diff = max(dot(light_dir, normal), 0.0);
-        vec3 diffuse = diff * color;
-
-        vec3 view_dir = vec3(0, 0, 1);
-        vec3 reflect_dir = reflect(-light_dir, normal);
-        vec3 halway_dir = normalize(light_dir + view_dir);
-        float spec = pow(max(dot(normal, halway_dir), 0.0), 32.0);
-
-        vec3 specular = vec3(0.2) * spec;
-        final_colors = vec4(ambient + diffuse + specular, 1.0) * col;
+        if (hide_borders > 0.0) {
+            final_colors = vec4(color, 1);
+        } else {
+        
+            vec3 normal = texture(normal_map, texture_coords.xy).rgb;
+            normal = normalize(normal * 2.0 - 1.0);
+            vec3 ambient = 0.1 * color;
+    
+            vec3 light_dir = normalize(vec3(-0.5,-0.5, 1));
+            float diff = max(dot(light_dir, normal), 0.0);
+            vec3 diffuse = diff * color;
+    
+            vec3 view_dir = vec3(0, 0, 1);
+            vec3 reflect_dir = reflect(-light_dir, normal);
+            vec3 halway_dir = normalize(light_dir + view_dir);
+            float spec = pow(max(dot(normal, halway_dir), 0.0), 32.0);
+    
+            vec3 specular = vec3(0.2) * spec;
+            final_colors = vec4(ambient + diffuse + specular, 1.0) * col;
+        }
     }
 """
 

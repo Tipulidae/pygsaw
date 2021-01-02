@@ -1,6 +1,8 @@
 import math
 import random
 import itertools
+import time
+from datetime import datetime
 from dataclasses import dataclass
 from typing import List, Set, Dict
 
@@ -8,6 +10,7 @@ from pyglet.window import EventDispatcher
 from tqdm import tqdm
 from pyqtree import Index as QuadTree
 
+from database import save_statistics
 from bezier import Point, Rectangle, make_random_edges, bounding_box, \
     point_in_polygon
 
@@ -17,6 +20,8 @@ class Model(EventDispatcher):
         self.nx = 0
         self.ny = 0
         self.num_pieces = 0
+        self.num_intended_pieces = 0
+        self.image_path = None
         self.image_width = 0
         self.image_height = 0
         self.snap_distance = 0
@@ -24,19 +29,26 @@ class Model(EventDispatcher):
         self.trays = None
         self.quadtree = None
         self.current_max_z_level = 0
+        self.timer = Timer()
+        self.cheated = False
+        self.start_time = datetime.now()
 
     def reset(
             self,
+            image_path,
             image_width,
             image_height,
-            num_pieces,
+            num_intended_pieces,
             snap_distance_percent=0.5):
+        self.image_path = image_path
         self.image_width = image_width
         self.image_height = image_height
+        self.num_intended_pieces = num_intended_pieces
         self.nx, self.ny, self.num_pieces = create_jigsaw_dimensions(
-            num_pieces, image_width, image_height
+            num_intended_pieces, image_width, image_height
         )
         self.snap_distance = snap_distance_percent * image_width / self.nx
+        self.cheated = False
         self.pieces = make_jigsaw_cut(
             self.image_width,
             self.image_height,
@@ -49,9 +61,12 @@ class Model(EventDispatcher):
             self.quadtree.insert(piece, piece.bbox)
 
         self.current_max_z_level = self.num_pieces
+        self.timer.reset()
+        self.start_time = datetime.now()
 
     def to_dict(self):
         return {
+            'image_path': self.image_path,
             'pieces': self.pieces,
             'trays': self.trays,
             'current_max_z_level': self.current_max_z_level,
@@ -60,12 +75,16 @@ class Model(EventDispatcher):
             'num_pieces': self.num_pieces,
             'image_width': self.image_width,
             'image_height': self.image_height,
-            'snap_distance': self.snap_distance
+            'snap_distance': self.snap_distance,
+            'elapsed_seconds': self.elapsed_seconds,
+            'cheated': self.cheated,
+            'start_time': self.start_time
         }
 
     @classmethod
     def from_dict(cls, data):
         model = cls()
+        model.image_path = data['image_path']
         model.pieces = data['pieces']
         model.trays = data['trays']
         model.nx = data['nx']
@@ -75,6 +94,9 @@ class Model(EventDispatcher):
         model.image_height = data['image_height']
         model.snap_distance = data['snap_distance']
         model.current_max_z_level = data['current_max_z_level']
+        model.timer = Timer(data['elapsed_seconds'])
+        model.cheated = data['cheated']
+        model.start_time = data['start_time']
         model.quadtree = QuadTree(bbox=(-100000, -100000, 100000, 100000))
         for piece in tqdm(model.pieces.values(), desc="Building quad-tree"):
             model.quadtree.insert(piece, piece.bbox)
@@ -96,6 +118,7 @@ class Model(EventDispatcher):
         ))
 
     def merge_random_pieces(self, n):
+        self.cheated = True
         n = min(n, len(self.pieces) - 1)
         for _ in range(n):
             piece = random.choice(list(self.pieces.values()))
@@ -250,6 +273,22 @@ class Model(EventDispatcher):
             self.trays.hidden_pieces
         )
 
+    def toggle_pause(self, is_paused):
+        if is_paused:
+            self.timer.pause()
+        else:
+            self.timer.start()
+
+    @property
+    def elapsed_seconds(self):
+        return self.timer.elapsed_seconds
+
+    @property
+    def percent_complete(self):
+        total_moves = self.num_pieces - 1
+        moves_made = self.num_pieces - len(self.pieces)
+        return 100 * moves_made / total_moves
+
     def _tray_is_visible(self, tray):
         return tray in self.trays.visible_trays
 
@@ -274,6 +313,8 @@ class Model(EventDispatcher):
             p2.pid
         )
 
+        self._check_game_over()
+
     def _pieces_at_location(self, x, y):
         for piece in self.quadtree.intersect(bbox=(x, y, x, y)):
             if self.trays.is_visible(piece.pid) and piece.contains(Point(x, y), self.nx):
@@ -286,6 +327,23 @@ class Model(EventDispatcher):
             default=None
         )
 
+    def _check_game_over(self):
+        if len(self.pieces) == 1:
+            self.timer.pause()
+            self.dispatch_event('on_win', self.elapsed_seconds, self.num_pieces)
+            save_statistics(
+                image_path=self.image_path,
+                num_pieces=self.num_pieces,
+                num_intended_pieces=self.num_intended_pieces,
+                image_width=self.image_width,
+                image_height=self.image_height,
+                snap_distance=self.snap_distance,
+                start_time=self.start_time,
+                piece_rotation=False,
+                cheated=self.cheated,
+                elapsed_seconds=self.elapsed_seconds
+            )
+
     def __eq__(self, other):
         return (
             self.current_max_z_level == other.current_max_z_level,
@@ -297,7 +355,7 @@ class Model(EventDispatcher):
             self.image_width == other.image_width,
             self.trays == other.trays,
             self.snap_distance == other.snap_distance,
-            self.quadtree == other.quadtree
+            self.quadtree == other.quadtree,
         )
 
 
@@ -305,6 +363,7 @@ Model.register_event_type('on_snap_piece_to_position')
 Model.register_event_type('on_pieces_merged')
 Model.register_event_type('on_z_levels_changed')
 Model.register_event_type('on_visibility_changed')
+Model.register_event_type('on_win')
 
 
 @dataclass
@@ -434,6 +493,37 @@ class Tray:
             self.visible_trays == other.visible_trays and
             self.pid_to_tray == other.pid_to_tray
         )
+
+
+class Timer:
+    def __init__(self, elapsed_seconds=0):
+        self.seconds = elapsed_seconds
+        self.start_time = 0
+        self.is_running = False
+
+    def start(self):
+        self.is_running = True
+        self.start_time = time.time()
+
+    def pause(self):
+        self.update()
+        self.is_running = False
+
+    def reset(self):
+        self.is_running = False
+        self.seconds = 0
+        self.start_time = 0
+
+    def update(self):
+        if self.is_running:
+            current_time = time.time()
+            self.seconds += current_time - self.start_time
+            self.start_time = current_time
+
+    @property
+    def elapsed_seconds(self):
+        self.update()
+        return self.seconds
 
 
 def make_jigsaw_cut(image_width, image_height, nx, ny):

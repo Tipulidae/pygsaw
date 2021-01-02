@@ -21,11 +21,12 @@ class Controller:
             puzzle_settings['num_pieces'],
         )
 
-    def _new_puzzle(self, image_path, num_pieces):
+    def _new_puzzle(self, image_path, num_intended_pieces):
         self.image_path = image_path
         texture = pyglet.image.load(image_path).get_texture()
+
         self.model = Model()
-        self.model.reset(texture.width, texture.height, num_pieces)
+        self.model.reset(image_path, texture.width, texture.height, num_intended_pieces)
         self.view = View(
             texture,
             image_path,
@@ -39,6 +40,9 @@ class Controller:
         self.view.push_handlers(self)
         self.view.hand.push_handlers(self)
 
+        self.model.toggle_pause(False)
+        self.view.toggle_pause(False)
+
     def on_new_game(self, image_path, num_pieces):
         self.window.pop_handlers()
         self.view.destroy_pieces()
@@ -46,9 +50,8 @@ class Controller:
 
     def on_quicksave(self):
         print("quicksave!")
-        data = {"path": self.image_path, "model": self.model.to_dict()}
         dump(
-            obj=data,
+            obj=self.model.to_dict(),
             path=f'.savegame/'
                  f'{os.path.basename(self.image_path)[:-4]}_'
                  f'{self.model.num_pieces}.sav',
@@ -66,8 +69,8 @@ class Controller:
             compression='bz2',
             set_default_extension=False
         )
-        self.model = Model.from_dict(data['model'])
-        self.image_path = data['path']
+        self.model = Model.from_dict(data)
+        self.image_path = data['image_path']
         texture = pyglet.image.load(self.image_path).get_texture()
 
         self.view = View(
@@ -82,6 +85,7 @@ class Controller:
         self.model.push_handlers(self)
         self.view.push_handlers(self)
         self.view.hand.push_handlers(self)
+        self.model.timer.start()
 
     def on_mouse_down(self, x, y, is_shift):
         if (piece := self.model.piece_at_coordinate(x, y)) is not None:
@@ -128,6 +132,19 @@ class Controller:
     def on_visibility_changed(self, tray, is_visible, hidden_pieces):
         self.view.set_visibility(tray, is_visible)
         self.view.drop_specific_pieces_from_hand(hidden_pieces)
+
+    def on_info(self):
+        self.view.print_info(
+            elapsed_seconds=self.model.elapsed_seconds,
+            percent_complete=self.model.percent_complete
+        )
+
+    def on_pause(self, is_paused):
+        self.model.toggle_pause(is_paused)
+        self.view.toggle_pause(is_paused)
+
+    def on_win(self, elapsed_seconds, num_pieces):
+        self.view.game_over(elapsed_seconds, num_pieces)
 
 
 def _most_recently_modified_file_in_folder(path):

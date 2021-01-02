@@ -8,6 +8,7 @@ import pyglet.window.key as key
 import vecrec
 from tqdm import tqdm
 from pyglet.math import Mat4
+from humanfriendly import format_timespan
 
 import earcut
 from shaders import make_piece_shader, make_shape_shader, make_table_shader, make_menu_shader
@@ -25,6 +26,21 @@ PAN_KEYS = [key.W, key.A, key.S, key.D]
 class PieceGroupFactory:
     default_groups = dict()
     big_groups = {tray: set() for tray in range(10)}
+    hand_group = None
+    _hide_borders = False
+
+    @staticmethod
+    def init_groups(texture, normal_map, visible_trays):
+        PieceGroupFactory.default_groups = {
+            tray: PieceGroup(texture, normal_map, tray=tray)
+            for tray in range(10)
+        }
+        PieceGroupFactory.big_groups = {tray: set() for tray in range(10)}
+        for tray in range(10):
+            is_visible = tray in visible_trays
+            PieceGroupFactory.toggle_visibility(tray, is_visible=is_visible)
+
+        PieceGroupFactory.hand_group = PieceGroup(texture, normal_map)
 
     @staticmethod
     def get_piece_group(tray):
@@ -35,6 +51,23 @@ class PieceGroupFactory:
         PieceGroupFactory.default_groups[tray].set_visibility(is_visible)
         for group in PieceGroupFactory.big_groups[tray]:
             group.set_visibility(is_visible)
+
+    @staticmethod
+    def invert_border_visibility():
+        hide_borders = not PieceGroupFactory._hide_borders
+        PieceGroupFactory.set_border_visibility(hide_borders)
+
+    @staticmethod
+    def set_border_visibility(hide_borders=False):
+        PieceGroupFactory._hide_borders = hide_borders
+        for group in PieceGroupFactory.default_groups.values():
+            group.set_border_visibility(hide_borders)
+
+        for tray in range(10):
+            for group in PieceGroupFactory.big_groups[tray]:
+                group.set_border_visibility(hide_borders)
+
+        PieceGroupFactory.hand_group.set_border_visibility(hide_borders)
 
     @staticmethod
     def move_to_group(group, tray):
@@ -68,6 +101,7 @@ class PieceGroup(pyglet.graphics.Group):
         self.program.use()
         self.program['diffuse_map'] = 0
         self.program['normal_map'] = 1
+        self.program['hide_borders'] = 0
         self.program.stop()
 
     def move(self, dx, dy, dz):
@@ -89,6 +123,11 @@ class PieceGroup(pyglet.graphics.Group):
             self.program['hidden'] = 1.0
         self.program.stop()
 
+    def set_border_visibility(self, hide_border):
+        self.program.use()
+        self.program['hide_borders'] = 1 if hide_border else 0
+        self.program.stop()
+
     def set_state(self):
         self.program.use()
         gl.glActiveTexture(gl.GL_TEXTURE0)
@@ -108,9 +147,11 @@ class PieceGroup(pyglet.graphics.Group):
         return f"{self.__class__.__name__}()"
 
     def __eq__(self, other):
-        return (other.__class__ is self.__class__ and
-                self.program is other.program and
-                self.parent is other.parent)
+        return (
+            other.__class__ is self.__class__ and
+            self.program is other.program and
+            self.parent is other.parent
+        )
 
     def __hash__(self):
         return hash((id(self.parent), id(self.program)))
@@ -290,6 +331,7 @@ class Jigsaw(pyglet.window.Window):
         self.keys = key.KeyStateHandler()
         self.push_handlers(self.keys)
         self.is_panning = False
+        self.is_paused = False
 
     def on_resize(self, width, height):
         self.my_projection.change_window_size(
@@ -303,9 +345,19 @@ class Jigsaw(pyglet.window.Window):
 
     def on_draw(self):
         self.clear()
-        self.batch.draw()
+        if not self.is_paused:
+            self.batch.draw()
+
+    def toggle_pause(self, is_paused):
+        self.is_paused = is_paused
+        if is_paused:
+            pyglet.clock.unschedule(self.update)
+            self.is_panning = False
 
     def on_mouse_scroll(self, x, y, scroll_x, scroll_y):
+        if self.is_paused:
+            return
+
         if scroll_y > 0:
             self.my_projection.zoom(1.25, x, y)
         elif scroll_y < 0:
@@ -323,6 +375,9 @@ class Jigsaw(pyglet.window.Window):
             self.my_projection.pan(self.pan_speed * dt, 0)
 
     def on_key_press(self, symbol, modifiers):
+        if self.is_paused:
+            return
+
         if not self.is_panning and symbol in PAN_KEYS:
             pyglet.clock.schedule_interval(self.update, 1 / 120)
             self.is_panning = True
@@ -386,9 +441,10 @@ class View(pyglet.window.EventDispatcher):
         self.number_keys = NumberKeys()
         self.texture = None
         self.normal_map = None
+        self.is_paused = False
 
         self.table = Table(self.window.batch)
-        # self.menu = Menu(self.window.batch)
+        self.menu = Menu(self.window.batch)
 
         self.reset(texture, piece_data, visible_trays)
 
@@ -409,17 +465,10 @@ class View(pyglet.window.EventDispatcher):
             piece_data[0]['height'],
         )
 
-        PieceGroupFactory.default_groups = {
-            tray: PieceGroup(texture, self.normal_map, tray=tray)
-            for tray in range(10)
-        }
-        PieceGroupFactory.big_groups = {tray: set() for tray in range(10)}
-        for tray in range(10):
-            is_visible = tray in visible_trays
-            PieceGroupFactory.toggle_visibility(tray, is_visible=is_visible)
+        PieceGroupFactory.init_groups(texture, self.normal_map, visible_trays)
 
         self.pieces = dict()
-        self.hand = Hand(default_group=PieceGroup(texture, self.normal_map))
+        self.hand = Hand()
         self.projection.push_handlers(on_pan=self.hand.move)
         self.projection.push_handlers(on_pan=self.selection_box.drag)
 
@@ -455,6 +504,14 @@ class View(pyglet.window.EventDispatcher):
         )
         self.hand.group.z += len(polygons)
 
+    def toggle_pause(self, is_paused):
+        self.window.toggle_pause(is_paused)
+        self.is_paused = is_paused
+        if is_paused:
+            if self.hand.is_mouse_down:
+                self.hand.mouse_up()
+                self.selection_box.deactivate()
+
     def on_mouse_press(self, x_, y_, button, modifiers):
         """
         The x_, y_ tuple is the view coordinates of the mouse pointer, in
@@ -463,12 +520,17 @@ class View(pyglet.window.EventDispatcher):
         zoomed and/or panned, the view coordinates will differ from the clip-
         coordinates, which correspond to the "actual" coordinates in the model.
         """
+        if self.is_paused:
+            return
         x, y = self.projection.view_to_clip_coord(x_, y_)
         is_shift = modifiers & key.MOD_SHIFT
         self.dispatch_event('on_mouse_down', x, y, is_shift)
         self.hand.is_mouse_down = True
 
     def on_mouse_release(self, x_, y_, button, modifiers):
+        if self.is_paused:
+            return
+
         self.hand.is_mouse_down = False
         if self.selection_box.is_active:
             x, y = self.projection.view_to_clip_coord(x_, y_)
@@ -482,6 +544,9 @@ class View(pyglet.window.EventDispatcher):
             self.hand.mouse_up()
 
     def on_mouse_drag(self, x_, y_, dx_, dy_, buttons, modifiers):
+        if self.is_paused:
+            return
+
         if self.selection_box.is_active:
             x, y = self.projection.view_to_clip_coord(x_, y_)
             self.selection_box.drag_to(x, y)
@@ -491,6 +556,14 @@ class View(pyglet.window.EventDispatcher):
             self.hand.move(dx, dy)
 
     def on_key_press(self, symbol, modifiers):
+        if symbol == key.PAUSE:
+            self.dispatch_event('on_pause', not self.is_paused)
+        if symbol == key.R and modifiers & key.MOD_CTRL:
+            select_image(callback=self.new_jigsaw, image_path=self.image_path)
+
+        if self.is_paused:
+            return
+
         self.number_keys.press(symbol)
         if symbol == key.C:
             self.hand.drop_everything()
@@ -506,14 +579,16 @@ class View(pyglet.window.EventDispatcher):
         if symbol == key.T:
             self.table.cycle_texture()
         if symbol == key.ESCAPE:
+            self.hand.mouse_up()
             self.hand.drop_everything()
-        if symbol == key.R and modifiers & key.MOD_CTRL:
-            select_image(callback=self.new_jigsaw, image_path=self.image_path)
         if symbol == key.F5:
             self.dispatch_event('on_quicksave')
         if symbol == key.F9:
             self.dispatch_event('on_quickload')
-
+        if symbol == key.PERIOD:
+            self.dispatch_event('on_info')
+        if symbol == key.COMMA:
+            PieceGroupFactory.invert_border_visibility()
         if _is_digit_key(symbol):
             tray = _digit_from_key(symbol)
             if modifiers & key.MOD_CTRL:
@@ -571,6 +646,21 @@ class View(pyglet.window.EventDispatcher):
 
     def set_visibility(self, tray, is_visible):
         PieceGroupFactory.toggle_visibility(tray, is_visible)
+
+    def print_info(self, elapsed_seconds, percent_complete):
+        print(
+            f"Completed {percent_complete:.1f}% in "
+            f"{format_timespan(elapsed_seconds)}"
+        )
+
+    def game_over(self, elapsed_seconds, num_pieces):
+        PieceGroupFactory.set_border_visibility(hide_borders=True)
+        print(
+            f"Congratulations, you won! \n"
+            f"Image: {self.image_path}, "
+            f"pieces: {num_pieces}, "
+            f"elapsed time: {format_timespan(elapsed_seconds)}"
+        )
 
 
 class Piece:
@@ -855,7 +945,7 @@ class Menu:
         )
 
         self.text = pyglet.text.Label(
-            text='Hello', x=0, y=0, batch=self.batch, group=self.group)
+            text='Hello', x=0, y=0, batch=self.batch)
 
 
 class SelectionBox:
@@ -907,10 +997,8 @@ class SelectionBox:
 
 
 class Hand(pyglet.window.EventDispatcher):
-    def __init__(self, default_group):
-        self.group = PieceGroup(
-            default_group.texture,
-            default_group.normal_map)
+    def __init__(self):
+        self.group = PieceGroupFactory.hand_group
         self.pieces = dict()
         self.step = (0, 0)
         self.is_mouse_down = True
@@ -1026,6 +1114,8 @@ View.register_event_type('on_view_spread_out')
 View.register_event_type('on_new_game')
 View.register_event_type('on_quicksave')
 View.register_event_type('on_quickload')
+View.register_event_type('on_pause')
+View.register_event_type('on_info')
 
 Hand.register_event_type('on_view_pieces_moved')
 Hand.register_event_type('on_view_select_pieces')
