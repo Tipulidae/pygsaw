@@ -1,5 +1,4 @@
-from model import Tray, Piece, Model
-from bezier import Point, Rectangle
+from model import Tray, Model
 
 
 class TestTray:
@@ -118,7 +117,7 @@ class TestTray:
 class TestSerialize:
     def test_can_serialize_model(self):
         model = Model()
-        model.reset(1000, 1000, 9)
+        model.reset('kitten.png', 1000, 1000, 9)
         model_dict = model.to_dict()
         new_model = Model.from_dict(model_dict)
         assert model == new_model

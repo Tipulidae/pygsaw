@@ -1,8 +1,6 @@
 import aggdraw
 from pyglet.image import ImageData
-from PIL import Image, ImageShow, ImageFilter, ImageMath
-
-from model import Model
+from PIL import Image, ImageFilter, ImageMath
 
 
 # Adapted from http://www.pythonstuff.org
