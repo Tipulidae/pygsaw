@@ -27,36 +27,59 @@ outlined below.
 ## Implemented features
 * Good performance with large number of pieces (can easily handle 10000 pieces
  or more)
-* Unlimited surface area to build on
-* Pan with WASD keys
-* Zoom with mouse scroll wheel
-* Select multiple pieces by holding shift and dragging
-* Pieces "snap" together when close to a neighbour
+* Practially unlimited surface area to build on
+* Panning and zooming the view
+* Selection box to select and move multiple pieces at once
+* Pieces snap together when close to a neighbour
 * Organize pieces into "trays": clicking a piece while a number key is pressed will move that piece to the corresponding tray. Pressing ctrl+number key will toggle the visibility of all the pieces in the corresponding tray. Hidden pieces can't be interacted with.
-* Press SPACEBAR to organize all selected "single" pieces into a nice "grid"
-* Press Ctrl+R to create a new game. Select any jpg or png image from your computer to use as jigsaw image. You can select the number of pieces to use in the dialog box. Press the random button to pick a random image from the last used folder.
-* Cheat-buttons for debugging: C will connect two random pieces, X will connect 100 random pieces.
-* Save game with F5
-* Load the most recently saved game with F9
-* Press PAUSE key to pause the game. This will hide all the pieces, stop the timer and disable user inputs. Press PAUSE again to unpause.
-* Press PERIOD (.) to print your current progress and how long you've been building the current puzzle.
-* Press COMMA (,) to toggle piece edges. 
-* Press T to toggle between background images. You can add your own background images by placing them in the resources/textures folder.
-* When the game is over, a victory message is printed with some stats. 
+* Can organize all selected "single" pieces into a nice grid
+* Select custom image or random image from folder
+* Select any jigsaw size you want
+* Customizeable background image - add your own images to the resources/textures folder
+* Print progress (time elapsed and percent completed)
+* Pause game (this will hide all pieces and stop the timer)
+* Saving and loading (although at the moment you can only load the most recently saved game. To load another game you would have to move or delete any more recent saves.)
+* Records statistics of finished game in a local database
+* Cheat function to automatically connect random pieces
+
 
 ## Planned features
-* Better saving/loading (specify which file to load, and name of the save file)
 * Piece rotation - allowing pieces to be rotated.
-* Image preview
-* Background image
-* Tray visualization, visibility indicator
-* Nice(r) user interface
-* Better looking pieces
+* Better saving/loading (specify which file to load, and name of the save file)
 * Configurable keybindings
-* Select images directly from pixabay or other image database
-* Random image
+* Image preview
+* Game box: all pieces start in the box, and you start by taking pieces, a handful at a time, from the box.
+* Automatic sorting, at first for finding the edge-pieces, later maybe more advanced
+* Game stats, highscore, predicted time to complete, etc.
+* Nicer background, with optional outline for the finished puzzle
+* Tray visualization, visibility indicator
+* Sticky trays or trays that behave more like actual trays
+* Select images directly from pixabay or other image database, including choosing a random image
 * Loading screen
-* Game stats, highscore, predicted time to complete, number of clicks needed, etc.
+* Improved interface in general (graphics, menus, etc)
+* Better looking pieces
+
+
+## Keybindings (hardcoded for now)
+* Select piece: LEFT MOUSE BUTTON
+* Selection box: SHIFT+LEFT MOUSE BUTTON, drag to create selection box
+* Unselect piece(s): ESCAPE
+* Move selected pieces: Click and drag
+* Zoom in/out: SCROLL UP/DOWN
+* Pan view: WASD
+* Arrange selected pieces in a grid: SPACEBAR
+* Move selected pieces to tray {0-9}: {0-9} keys
+* Move piece to tray {0-9}: Click on piece while pressing {0-9} key
+* Toggle visibility of all pieces in tray {0-9}: CTRL+{0-9} 
+* Open dialog for new game: CTRL+R
+* Save game: F5
+* Load most recently saved game: F9
+* Pause/unpause game: PAUSE
+* Show progress: PERIOD (.)
+* Toggle piece edges: COMMA (,)
+* Toggle background image: T
+* Connect two random pieces (cheat): C
+* Connect 100 random pieces (cheat): X
 
 ## Installation instructions
 Tested on Windows 10. 
