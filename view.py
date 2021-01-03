@@ -627,9 +627,9 @@ class View(pyglet.window.EventDispatcher):
     def drop_specific_pieces_from_hand(self, pids):
         self.hand.drop_pieces(pids)
 
-    def rotate_piece(self, pid, rotation):
-        self.pieces[pid].rotation = rotation
-        print(f"View updated rotation of {pid} to {rotation}")
+    def rotate_piece(self, pid, rotation, pivot):
+        # self.pieces[pid].rotation = rotation
+        self.pieces[pid].rotate(rotation, pivot)
 
     def set_visibility(self, tray, is_visible):
         PieceGroupFactory.toggle_visibility(tray, is_visible)
@@ -677,7 +677,8 @@ class Piece:
             self.vertex_list.append(vl)
 
         self._angle = self._rotation * math.pi / 2
-        self._pivot = center_point(itertools.chain.from_iterable(self.polygons))
+        self._pivot = Point(0, 0)
+        self._p = Point(0, 0)
 
         self.set_position(*position)
 
@@ -721,6 +722,27 @@ class Piece:
         self._y += dy
         self._z += dz
 
+    def rotate(self, rotation, pivot):
+        old_rotation = self._rotation
+        self._rotation = rotation
+
+        if self.is_small:
+            pos = Point(self._x, self._y)
+            pivot = pos - pivot
+
+            angle = (rotation - old_rotation) * math.pi / 2
+            self._angle = rotation * math.pi / 2
+            c = math.cos(angle)
+            s = math.sin(angle)
+
+            rotated_pivot = Point(pivot.x*c - pivot.y*s,
+                                  pivot.x*s + pivot.y*c)
+            pos = pos - pivot + rotated_pivot
+            self._x = pos.x
+            self._y = pos.y
+
+            self.commit_position()
+
     def set_position(self, x, y, z):
         self._x, self._y, self._z = x, y, z
         if self.is_small:
@@ -731,7 +753,7 @@ class Piece:
     def _update_vertices(self, x, y, z):
         for polygon, vertex_list in zip(self.polygons, self.vertex_list):
             new_vertex_list = []
-            for p in rotate_points(polygon, self._pivot, self._angle):
+            for p in rotate_points(polygon, Point(0, 0), self._angle):
                 new_vertex_list.append(p.x + x)
                 new_vertex_list.append(p.y + y)
                 new_vertex_list.append(z)

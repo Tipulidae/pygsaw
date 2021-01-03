@@ -259,8 +259,20 @@ class Model(EventDispatcher):
 
         print(f"Rotate piece {piece.pid} {direction}")
         self.quadtree.remove(piece, piece.bbox)
-        piece.rotate(direction)
-        self.dispatch_event('on_piece_rotated', piece.pid, piece.rotation)
+
+        # pivot = center_of_piece_near_point(
+        #     Point(x, y) - piece.position,
+        #     self.nx,
+        #     self.image_width // self.nx,
+        #     self.image_height // self.ny
+        # )
+        # pivot += piece.position
+        #
+        # print(f"{x, y}, {pivot}")
+        pivot = Point(x, y)
+        piece.rotate(direction, pivot)
+        # piece.rotate(direction, pivot)
+        self.dispatch_event('on_piece_rotated', piece.pid, piece.rotation, pivot)
         self.snap_piece_to_neighbours(piece)
         self.quadtree.insert(piece, piece.bbox)
 
@@ -393,10 +405,15 @@ class Piece:
     y: float = 0
     z: float = 0
     rotation: int = 0
+    pivot: Point = Point(0, 0)
 
-    def rotate(self, direction):
+    def rotate(self, direction, pivot):
         self.rotation = (self.rotation + direction) % 4
-        print(f"Piece {self.pid} new rotation is {self.rotation}")
+        self.pivot = pivot - self.position
+
+        angle = self.rotation * math.pi / 2
+
+        # print(f"Piece {self.pid} new rotation is {self.rotation}")
 
     @property
     def bbox(self):
@@ -588,10 +605,8 @@ def make_jigsaw_cut(image_width, image_height, nx, ny, random_rotation=False):
         members={pid},
         width=width,
         height=height,
-        x=0,
-        y=0,
-        # x=random.randint(0, int(image_width * 2)) - origin.x,
-        # y=random.randint(0, int(image_height * 2)) - origin.y,
+        x=random.randint(0, int(image_width * 2)) - origin.x,
+        y=random.randint(0, int(image_height * 2)) - origin.y,
         z=pid,
         rotation=random.randint(0, 3) if random_rotation else 0
     ) for pid in tqdm(range(num_pieces), desc="Designing pieces")}
@@ -654,6 +669,12 @@ def point_to_pid(p, nx, width, height):
 
 def origin_of_pid(pid, nx, width, height):
     return Point(width * (pid % nx), height * (pid // nx))
+
+
+def center_of_piece_near_point(p, nx, width, height):
+    pid = point_to_pid(p, nx, width, height)
+    origin = origin_of_pid(pid, nx, width, height)
+    return origin + Point(width, height)
 
 
 def closest_neighbour_pid(pid, point, width, height, nx):
