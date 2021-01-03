@@ -25,6 +25,7 @@ class Model(EventDispatcher):
         self.image_width = 0
         self.image_height = 0
         self.snap_distance = 0
+        self.piece_rotation = False
         self.pieces = None
         self.trays = None
         self.quadtree = None
@@ -39,7 +40,9 @@ class Model(EventDispatcher):
             image_width,
             image_height,
             num_intended_pieces,
-            snap_distance_percent=0.5):
+            snap_distance_percent=0.5,
+            piece_rotation=False
+    ):
         self.image_path = image_path
         self.image_width = image_width
         self.image_height = image_height
@@ -48,12 +51,14 @@ class Model(EventDispatcher):
             num_intended_pieces, image_width, image_height
         )
         self.snap_distance = snap_distance_percent * image_width / self.nx
+        self.piece_rotation = piece_rotation
         self.cheated = False
         self.pieces = make_jigsaw_cut(
             self.image_width,
             self.image_height,
             self.nx,
-            self.ny
+            self.ny,
+            piece_rotation
         )
         self.trays = Tray(num_pids=self.num_pieces)
         self.quadtree = QuadTree(bbox=(-100000, -100000, 100000, 100000))
@@ -78,7 +83,8 @@ class Model(EventDispatcher):
             'snap_distance': self.snap_distance,
             'elapsed_seconds': self.elapsed_seconds,
             'cheated': self.cheated,
-            'start_time': self.start_time
+            'start_time': self.start_time,
+            'piece_rotation': self.piece_rotation
         }
 
     @classmethod
@@ -95,6 +101,7 @@ class Model(EventDispatcher):
         model.snap_distance = data['snap_distance']
         model.current_max_z_level = data['current_max_z_level']
         model.timer = Timer(data['elapsed_seconds'])
+        model.piece_rotation = data['piece_rotation']
         model.cheated = data['cheated']
         model.start_time = data['start_time']
         model.quadtree = QuadTree(bbox=(-100000, -100000, 100000, 100000))
@@ -113,9 +120,7 @@ class Model(EventDispatcher):
             bbox=(rect.left, rect.bottom, rect.right, rect.top)
         )
 
-        return list(self.trays.filter_visible(
-            map(to_pid, pieces_in_rect)
-        ))
+        return list(self.trays.filter_visible(map(to_pid, pieces_in_rect)))
 
     def merge_random_pieces(self, n):
         self.cheated = True
@@ -137,12 +142,21 @@ class Model(EventDispatcher):
             self._merge_pieces(piece, neighbour)
             self.quadtree.insert(piece, piece.bbox)
 
-    def move_and_snap(self, pid, dx, dy):
+    def move_pieces(self, pids, dx, dy):
+        snap_to_neighbours = len(pids) == 1
+        for pid in pids:
+            self.move_piece(pid, dx, dy, snap_to_neighbours=snap_to_neighbours)
+
+    def move_piece(self, pid, dx, dy, snap_to_neighbours=True):
         piece = self.pieces[pid]
         self.quadtree.remove(piece, piece.bbox)
         piece.x += dx
         piece.y += dy
+        if snap_to_neighbours:
+            self.snap_piece_to_neighbours(piece)
+        self.quadtree.insert(piece, piece.bbox)
 
+    def snap_piece_to_neighbours(self, piece):
         for neighbour_pid in piece.neighbours:
             if not self.trays.is_visible(neighbour_pid):
                 continue
@@ -157,8 +171,8 @@ class Model(EventDispatcher):
                 piece.y = neighbour.y
                 neighbour.z = piece.z
                 self.dispatch_event(
-                    'on_snap_piece_to_position',
-                    pid,
+                    'on_piece_moved',
+                    piece.pid,
                     piece.x,
                     piece.y,
                     piece.z
@@ -166,15 +180,13 @@ class Model(EventDispatcher):
 
                 self._merge_pieces(piece, neighbour)
 
-        self.quadtree.insert(piece, piece.bbox)
-
     def set_piece_position(self, piece, x, y):
         self.quadtree.remove(piece, piece.bbox)
         piece.x = x
         piece.y = y
 
         self.dispatch_event(
-            'on_snap_piece_to_position',
+            'on_piece_moved',
             piece.pid,
             piece.x,
             piece.y,
@@ -182,17 +194,6 @@ class Model(EventDispatcher):
         )
 
         self.quadtree.insert(piece, piece.bbox)
-
-    def move_pieces(self, pids, dx, dy):
-        if len(pids) == 1:
-            self.move_and_snap(pids[0], dx, dy)
-        else:
-            for pid in pids:
-                piece = self.pieces[pid]
-                self.quadtree.remove(piece, piece.bbox)
-                piece.x += dx
-                piece.y += dy
-                self.quadtree.insert(piece, piece.bbox)
 
     def spread_out(self, pids):
         single_pieces = list(filter(
@@ -251,6 +252,17 @@ class Model(EventDispatcher):
                 False,
                 self.trays.hidden_pieces
             )
+
+    def rotate_piece_at_coordinate(self, x, y, direction):
+        if (piece := self.piece_at_coordinate(x, y)) is None:
+            return
+
+        print(f"Rotate piece {piece.pid} {direction}")
+        self.quadtree.remove(piece, piece.bbox)
+        piece.rotate(direction)
+        self.dispatch_event('on_piece_rotated', piece.pid, piece.rotation)
+        self.snap_piece_to_neighbours(piece)
+        self.quadtree.insert(piece, piece.bbox)
 
     def get_hidden_pieces(self):
         return self.trays.hidden_pieces
@@ -359,7 +371,8 @@ class Model(EventDispatcher):
         )
 
 
-Model.register_event_type('on_snap_piece_to_position')
+Model.register_event_type('on_piece_rotated')
+Model.register_event_type('on_piece_moved')
 Model.register_event_type('on_pieces_merged')
 Model.register_event_type('on_z_levels_changed')
 Model.register_event_type('on_visibility_changed')
@@ -379,6 +392,11 @@ class Piece:
     x: float = 0
     y: float = 0
     z: float = 0
+    rotation: int = 0
+
+    def rotate(self, direction):
+        self.rotation = (self.rotation + direction) % 4
+        print(f"Piece {self.pid} new rotation is {self.rotation}")
 
     @property
     def bbox(self):
@@ -400,6 +418,7 @@ class Piece:
             'pid': self.pid,
             'polygons': self.polygon,
             'position': (self.x, self.y, self.z),
+            'rotation': self.rotation,
             'width': self.width,
             'height': self.height
         }
@@ -526,7 +545,7 @@ class Timer:
         return self.seconds
 
 
-def make_jigsaw_cut(image_width, image_height, nx, ny):
+def make_jigsaw_cut(image_width, image_height, nx, ny, random_rotation=False):
     num_edges = 2 * nx * ny - nx - ny
     num_pieces = nx * ny
     nv = (nx - 1) * ny
@@ -564,14 +583,17 @@ def make_jigsaw_cut(image_width, image_height, nx, ny):
         pid=pid,
         polygon={pid: (polygon := piece_contour(pid))},
         bounding_box=bounding_box(polygon),
-        origin=(origin := Point(width * (pid % nx), height * (pid // nx))),
+        origin=(origin := origin_of_pid(pid, nx, width, height)),
         neighbours=create_neighbours(pid, num_pieces, nx),
         members={pid},
         width=width,
         height=height,
-        x=random.randint(0, int(image_width * 2)) - origin.x,
-        y=random.randint(0, int(image_height * 2)) - origin.y,
-        z=pid
+        x=0,
+        y=0,
+        # x=random.randint(0, int(image_width * 2)) - origin.x,
+        # y=random.randint(0, int(image_height * 2)) - origin.y,
+        z=pid,
+        rotation=random.randint(0, 3) if random_rotation else 0
     ) for pid in tqdm(range(num_pieces), desc="Designing pieces")}
 
     return pieces
@@ -628,6 +650,10 @@ def point_to_pid(p, nx, width, height):
         ((p.x - width / 2) // width) % nx +
         ((p.y - height / 2) // height) * nx
     )
+
+
+def origin_of_pid(pid, nx, width, height):
+    return Point(width * (pid % nx), height * (pid // nx))
 
 
 def closest_neighbour_pid(pid, point, width, height, nx):

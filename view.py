@@ -1,4 +1,5 @@
 import time
+import math
 import itertools
 import glob
 
@@ -14,6 +15,7 @@ import earcut
 from shaders import make_piece_shader, make_shape_shader, make_table_shader
 from textures import make_normal_map
 from file_picker import select_image
+from bezier import Point, rotate_points, center_point
 
 
 GROUP_COUNT = 2
@@ -331,10 +333,11 @@ class Jigsaw(pyglet.window.Window):
         if self.is_paused:
             return
 
-        if scroll_y > 0:
-            self.my_projection.zoom(1.25, x, y)
-        elif scroll_y < 0:
-            self.my_projection.zoom(0.8, x, y)
+        if self.keys[key.LCTRL]:
+            if scroll_y > 0:
+                self.my_projection.zoom(1.25, x, y)
+            elif scroll_y < 0:
+                self.my_projection.zoom(0.8, x, y)
 
     def update(self, dt):
         if self.keys[key.W]:
@@ -462,12 +465,13 @@ class View(pyglet.window.EventDispatcher):
             num_pieces
         )
 
-    def create_piece(self, pid, polygons, position, width, height, tray):
+    def create_piece(self, pid, polygons, position, rotation, width, height, tray):
         self.pieces[pid] = Piece(
             pid,
             polygons,
             tray,
             position,
+            rotation,
             width,
             height,
             self.texture,
@@ -526,6 +530,13 @@ class View(pyglet.window.EventDispatcher):
             dx = dx_ / self.projection.zoom_level
             dy = dy_ / self.projection.zoom_level
             self.hand.move(dx, dy)
+
+    def on_mouse_scroll(self, x_, y_, scroll_x, scroll_y):
+        if self.is_paused or self.window.keys[key.LCTRL]:
+            return
+
+        x, y = self.projection.view_to_clip_coord(x_, y_)
+        self.dispatch_event('on_scroll', x, y, scroll_y)
 
     def on_key_press(self, symbol, modifiers):
         if symbol == key.PAUSE:
@@ -601,8 +612,8 @@ class View(pyglet.window.EventDispatcher):
     def select_pieces(self, pids):
         self.hand.select_pieces({pid: self.pieces[pid] for pid in pids})
 
-    def snap_piece_to_position(self, pid, x, y, z):
-        self.hand.snap_piece_to_position(self.pieces[pid], x, y, z)
+    def move_piece(self, pid, x, y, z):
+        self.hand.move_piece(self.pieces[pid], x, y, z)
 
     def merge_pieces(self, pid1, pid2):
         self.pieces[pid1].merge(self.pieces[pid2])
@@ -615,6 +626,10 @@ class View(pyglet.window.EventDispatcher):
 
     def drop_specific_pieces_from_hand(self, pids):
         self.hand.drop_pieces(pids)
+
+    def rotate_piece(self, pid, rotation):
+        self.pieces[pid].rotation = rotation
+        print(f"View updated rotation of {pid} to {rotation}")
 
     def set_visibility(self, tray, is_visible):
         PieceGroupFactory.toggle_visibility(tray, is_visible)
@@ -636,9 +651,10 @@ class View(pyglet.window.EventDispatcher):
 
 
 class Piece:
-    def __init__(self, pid, polygons, tray, position, width, height, texture,
-                 normal_map, batch):
+    def __init__(self, pid, polygons, tray, position, rotation, width, height,
+                 texture, normal_map, batch):
         self.pid = pid
+        self._rotation = rotation
         self.texture = texture
         self.normal_map = normal_map
         self.size = len(polygons)
@@ -653,12 +669,15 @@ class Piece:
 
         self._x, self._y, self._z = 0, 0, 0
 
-        self.original_vertices = []
+        self.polygons = []
         self.vertex_list = []
         for polygon in polygons.values():
-            ov, vl = self._create_vertices(polygon, width, height)
-            self.original_vertices.append(ov)
+            vl = self._create_vertices(polygon, width, height)
+            self.polygons.append(polygon)
             self.vertex_list.append(vl)
+
+        self._angle = self._rotation * math.pi / 2
+        self._pivot = center_point(itertools.chain.from_iterable(self.polygons))
 
         self.set_position(*position)
 
@@ -668,13 +687,13 @@ class Piece:
         offset_x = width // 2
         offset_y = height // 2
 
-        original_vertices = []
+        vertices = []
         earcut_input = []
         tex_coords = []
         for p in polygon:
-            original_vertices.append(p.x)
-            original_vertices.append(p.y)
-            original_vertices.append(0)
+            vertices.append(p.x)
+            vertices.append(p.y)
+            vertices.append(0)
 
             earcut_input.append(p.x)
             earcut_input.append(p.y)
@@ -685,17 +704,17 @@ class Piece:
 
         indices = earcut.earcut(earcut_input)
 
-        n = len(original_vertices) // 3
+        n = len(vertices) // 3
         vertex_list = self.batch.add_indexed(
             n,
             pyglet.gl.GL_TRIANGLES,
             self.group,
             indices,
-            ('position3f/static', tuple(original_vertices)),
+            ('position3f/static', tuple(vertices)),
             ('colors4Bn/static', (255, 255, 255, 255) * n),
             ('tex_coords3f/static', tuple(tex_coords))
         )
-        return original_vertices, vertex_list
+        return vertex_list
 
     def move(self, dx, dy, dz):
         self._x += dx
@@ -710,17 +729,12 @@ class Piece:
             self._update_groups(x, y, z)
 
     def _update_vertices(self, x, y, z):
-        for vertices, vertex_list in zip(
-                self.original_vertices, self.vertex_list):
+        for polygon, vertex_list in zip(self.polygons, self.vertex_list):
             new_vertex_list = []
-            for i, v in enumerate(vertices):
-                k = i % 3
-                if k == 0:
-                    new_vertex_list.append(v + x)
-                elif k == 1:
-                    new_vertex_list.append(v + y)
-                elif k == 2:
-                    new_vertex_list.append(v + z)
+            for p in rotate_points(polygon, self._pivot, self._angle):
+                new_vertex_list.append(p.x + x)
+                new_vertex_list.append(p.y + y)
+                new_vertex_list.append(z)
 
             vertex_list.position[:] = tuple(new_vertex_list)
 
@@ -792,7 +806,7 @@ class Piece:
                 other.set_position(self.x, self.y, self.z)
                 other.group = self.group
 
-        self.original_vertices += other.original_vertices
+        self.polygons += other.polygons
         self.vertex_list += other.vertex_list
         self.size += other.size
 
@@ -815,6 +829,21 @@ class Piece:
     @property
     def z(self):
         return self._z
+
+    @property
+    def rotation(self):
+        return self._rotation
+
+    @rotation.setter
+    def rotation(self, rotation):
+        self._rotation = rotation
+
+        if self.is_small:
+            self._angle = rotation * math.pi / 2
+            self._pivot = center_point(
+                itertools.chain.from_iterable(self.polygons))
+
+            self.commit_position()
 
     @property
     def group(self):
@@ -1017,7 +1046,7 @@ class Hand(pyglet.window.EventDispatcher):
             for piece in self.pieces.values():
                 piece.remember_relative_position(dx, dy, 0)
 
-    def snap_piece_to_position(self, piece, x, y, z):
+    def move_piece(self, piece, x, y, z):
         if piece.pid in self.pieces and piece.is_small:
             piece.set_position(
                 x - self.group.x,
@@ -1043,6 +1072,7 @@ def _digit_from_key(symbol):
 
 View.register_event_type('on_mouse_down')
 View.register_event_type('on_mouse_up')
+View.register_event_type('on_scroll')
 View.register_event_type('on_selection_box')
 View.register_event_type('on_key_press')
 View.register_event_type('on_cheat')

@@ -9,6 +9,7 @@ if __name__ == '__main__':
             'image_path': 'kitten.png',
             'num_pieces': 16,
             'big_piece_threshold': 50,
+            'piece_rotation': False
         },
         window_settings={
             'width': 1500,

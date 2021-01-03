@@ -19,14 +19,21 @@ class Controller:
         self._new_puzzle(
             f"resources/{puzzle_settings['image_path']}",
             puzzle_settings['num_pieces'],
+            puzzle_settings['piece_rotation']
         )
 
-    def _new_puzzle(self, image_path, num_intended_pieces):
+    def _new_puzzle(self, image_path, num_intended_pieces, piece_rotation=False):
         self.image_path = image_path
         texture = pyglet.image.load(image_path).get_texture()
 
         self.model = Model()
-        self.model.reset(image_path, texture.width, texture.height, num_intended_pieces)
+        self.model.reset(
+            image_path,
+            texture.width,
+            texture.height,
+            num_intended_pieces,
+            piece_rotation=piece_rotation
+        )
         self.view = View(
             texture,
             image_path,
@@ -98,6 +105,12 @@ class Controller:
     def on_mouse_up(self, x, y):
         pass
 
+    def on_scroll(self, x, y, direction):
+        self.model.rotate_piece_at_coordinate(x, y, direction)
+
+    def on_piece_rotated(self, pid, rotation):
+        self.view.rotate_piece(pid, rotation)
+
     def on_view_pieces_moved(self, pids, dx, dy):
         self.model.move_pieces(pids, dx, dy)
 
@@ -107,8 +120,8 @@ class Controller:
     def on_z_levels_changed(self, msg):
         self.view.remember_new_z_levels(msg)
 
-    def on_snap_piece_to_position(self, pid, x, y, z):
-        self.view.snap_piece_to_position(pid, x, y, z)
+    def on_piece_moved(self, pid, x, y, z):
+        self.view.move_piece(pid, x, y, z)
 
     def on_pieces_merged(self, pid1, pid2):
         self.view.merge_pieces(pid1, pid2)
