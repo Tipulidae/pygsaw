@@ -627,9 +627,9 @@ class View(pyglet.window.EventDispatcher):
     def drop_specific_pieces_from_hand(self, pids):
         self.hand.drop_pieces(pids)
 
-    def rotate_piece(self, pid, rotation, pivot):
+    def rotate_piece(self, pid, rotation, position):
         # self.pieces[pid].rotation = rotation
-        self.pieces[pid].rotate(rotation, pivot)
+        self.pieces[pid].rotate(rotation, position)
 
     def set_visibility(self, tray, is_visible):
         PieceGroupFactory.toggle_visibility(tray, is_visible)
@@ -677,9 +677,6 @@ class Piece:
             self.vertex_list.append(vl)
 
         self._angle = self._rotation * math.pi / 2
-        self._pivot = Point(0, 0)
-        self._p = Point(0, 0)
-
         self.set_position(*position)
 
     def _create_vertices(self, polygon, width, height):
@@ -722,25 +719,13 @@ class Piece:
         self._y += dy
         self._z += dz
 
-    def rotate(self, rotation, pivot):
-        old_rotation = self._rotation
+    def rotate(self, rotation, position):
         self._rotation = rotation
 
         if self.is_small:
-            pos = Point(self._x, self._y)
-            pivot = pos - pivot
-
-            angle = (rotation - old_rotation) * math.pi / 2
-            self._angle = rotation * math.pi / 2
-            c = math.cos(angle)
-            s = math.sin(angle)
-
-            rotated_pivot = Point(pivot.x*c - pivot.y*s,
-                                  pivot.x*s + pivot.y*c)
-            pos = pos - pivot + rotated_pivot
-            self._x = pos.x
-            self._y = pos.y
-
+            self._angle = self._rotation * math.pi / 2
+            self._x = position.x
+            self._y = position.y
             self.commit_position()
 
     def set_position(self, x, y, z):

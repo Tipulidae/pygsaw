@@ -162,6 +162,9 @@ class Model(EventDispatcher):
                 continue
 
             neighbour = self.pieces[neighbour_pid]
+            if piece.rotation != neighbour.rotation:
+                continue
+
             dist = Point.dist(
                 Point(piece.x, piece.y),
                 Point(neighbour.x, neighbour.y)
@@ -257,22 +260,15 @@ class Model(EventDispatcher):
         if (piece := self.piece_at_coordinate(x, y)) is None:
             return
 
-        print(f"Rotate piece {piece.pid} {direction}")
+        self.move_pieces_to_top([piece.pid])
         self.quadtree.remove(piece, piece.bbox)
-
-        # pivot = center_of_piece_near_point(
-        #     Point(x, y) - piece.position,
-        #     self.nx,
-        #     self.image_width // self.nx,
-        #     self.image_height // self.ny
-        # )
-        # pivot += piece.position
-        #
-        # print(f"{x, y}, {pivot}")
-        pivot = Point(x, y)
-        piece.rotate(direction, pivot)
-        # piece.rotate(direction, pivot)
-        self.dispatch_event('on_piece_rotated', piece.pid, piece.rotation, pivot)
+        piece.rotate(direction, Point(x, y))
+        self.dispatch_event(
+            'on_piece_rotated',
+            piece.pid,
+            piece.rotation,
+            piece.position
+        )
         self.snap_piece_to_neighbours(piece)
         self.quadtree.insert(piece, piece.bbox)
 
@@ -405,15 +401,15 @@ class Piece:
     y: float = 0
     z: float = 0
     rotation: int = 0
-    pivot: Point = Point(0, 0)
 
     def rotate(self, direction, pivot):
         self.rotation = (self.rotation + direction) % 4
-        self.pivot = pivot - self.position
+        angle = direction * math.pi / 2
+        p = self.position.rotate(angle, pivot)
+        self.x = p.x
+        self.y = p.y
 
-        angle = self.rotation * math.pi / 2
-
-        # print(f"Piece {self.pid} new rotation is {self.rotation}")
+        self.bounding_box.flip(direction)
 
     @property
     def bbox(self):
@@ -456,6 +452,12 @@ class Piece:
 
     def contains(self, point: Point, nx: int) -> bool:
         point = point - self.position
+
+        # Instead of rotating the polygons, we rotate the point in the
+        # opposite direction.
+        angle = -self.rotation * math.pi / 2
+        point = point.rotate(angle, Point(0, 0))
+
         pid = point_to_pid(point, nx, self.width, self.height)
         offset = Point(
             self.width * (1 + pid % nx),
@@ -596,20 +598,25 @@ def make_jigsaw_cut(image_width, image_height, nx, ny, random_rotation=False):
         return list(itertools.chain.from_iterable([
             edge.evaluate(10) for edge in contour]))
 
-    pieces = {pid: Piece(
-        pid=pid,
-        polygon={pid: (polygon := piece_contour(pid))},
-        bounding_box=bounding_box(polygon),
-        origin=(origin := origin_of_pid(pid, nx, width, height)),
-        neighbours=create_neighbours(pid, num_pieces, nx),
-        members={pid},
-        width=width,
-        height=height,
-        x=random.randint(0, int(image_width * 2)) - origin.x,
-        y=random.randint(0, int(image_height * 2)) - origin.y,
-        z=pid,
-        rotation=random.randint(0, 3) if random_rotation else 0
-    ) for pid in tqdm(range(num_pieces), desc="Designing pieces")}
+    pieces = {}
+    for pid in tqdm(range(num_pieces), desc="Designing pieces"):
+        piece = Piece(
+            pid=pid,
+            polygon={pid: (polygon := piece_contour(pid))},
+            bounding_box=bounding_box(polygon),
+            origin=(origin := origin_of_pid(pid, nx, width, height)),
+            neighbours=create_neighbours(pid, num_pieces, nx),
+            members={pid},
+            width=width,
+            height=height,
+            x=random.randint(0, int(image_width * 2)) - origin.x,
+            y=random.randint(0, int(image_height * 2)) - origin.y,
+            z=pid
+        )
+        if random_rotation:
+            piece.rotate(random.randint(0, 3), piece.position)
+
+        pieces[pid] = piece
 
     return pieces
 

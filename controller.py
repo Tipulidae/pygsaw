@@ -108,8 +108,8 @@ class Controller:
     def on_scroll(self, x, y, direction):
         self.model.rotate_piece_at_coordinate(x, y, direction)
 
-    def on_piece_rotated(self, pid, rotation, pivot):
-        self.view.rotate_piece(pid, rotation, pivot)
+    def on_piece_rotated(self, pid, rotation, position):
+        self.view.rotate_piece(pid, rotation, position)
 
     def on_view_pieces_moved(self, pids, dx, dy):
         self.model.move_pieces(pids, dx, dy)
