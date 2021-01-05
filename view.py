@@ -675,7 +675,6 @@ class Piece:
     def __init__(self, pid, polygons, tray, position, rotation, width, height,
                  texture, normal_map, batch):
         self.pid = pid
-        self._rotation = rotation
         self.texture = texture
         self.normal_map = normal_map
         self.size = len(polygons)
@@ -688,7 +687,7 @@ class Piece:
             self._group = PieceGroupFactory.new_big_group(tray)
             self.groups = [self.group]
 
-        self._x, self._y, self._z = 0, 0, 0
+        self._x, self._y, self._z, self._r = 0, 0, 0, 0
 
         self.polygons = []
         self.vertex_list = []
@@ -697,8 +696,7 @@ class Piece:
             self.polygons.append(polygon)
             self.vertex_list.append(vl)
 
-        self._angle = self._rotation * math.pi / 2
-        self.set_position(*position)
+        self.set_position(*position, rotation)
 
     def _create_vertices(self, polygon, width, height):
         sx = self.texture.tex_coords[6] / self.texture.width
@@ -742,34 +740,33 @@ class Piece:
         self._z += dz
 
     def rotate(self, rotation, position):
-        self._rotation = rotation
-        self._angle = self._rotation * math.pi / 2
+        self._r = rotation
         self._x = position.x
         self._y = position.y
         self.commit_position()
 
-    def set_position(self, x, y, z):
-        self._x, self._y, self._z = x, y, z
+    def set_position(self, x, y, z, r):
+        self._x, self._y, self._z, self._r = x, y, z, r
         if self.is_small:
-            self._update_vertices(x, y, z, self._angle)
+            self._update_vertices(x, y, z)
         else:
-            self._update_groups(x, y, z, self._angle)
+            self._update_groups(x, y, z)
 
-    def _update_vertices(self, x, y, z, angle):
+    def _update_vertices(self, x, y, z):
         for polygon, vertex_list in zip(self.polygons, self.vertex_list):
             new_vertex_list = []
-            for p in rotate_points(polygon, Point(0, 0), angle):
+            for p in rotate_points(polygon, Point(0, 0), self.angle):
                 new_vertex_list.append(p.x + x)
                 new_vertex_list.append(p.y + y)
                 new_vertex_list.append(z)
 
             vertex_list.position[:] = tuple(new_vertex_list)
-            vertex_list.orientation[:] = (self._rotation, ) * len(polygon)
+            vertex_list.orientation[:] = (self._r, ) * len(polygon)
 
-    def _update_groups(self, x, y, z, angle):
+    def _update_groups(self, x, y, z):
         for group in self.groups:
             group.set_position(x, y, z)
-            group.set_rotation(angle)
+            group.set_rotation(self.angle)
 
     def set_default_tray(self, tray):
         if self.is_small:
@@ -778,13 +775,13 @@ class Piece:
             for group in self.groups:
                 PieceGroupFactory.move_to_group(group, tray)
 
-    def remember_position(self, x, y, z):
-        self._x, self._y, self._z = x, y, z
+    def remember_position(self, x, y, z, r):
+        self._x, self._y, self._z, self._r = x, y, z, r
         if self.is_big:
             self.commit_position()
 
     def remember_z_position(self, z):
-        self.remember_position(self._x, self._y, z)
+        self.remember_position(self._x, self._y, z, self._r)
 
     def remember_relative_position(self, dx, dy, dz):
         self._x += dx
@@ -795,9 +792,9 @@ class Piece:
 
     def commit_position(self):
         if self.is_small:
-            self._update_vertices(self._x, self._y, self._z, self._angle)
+            self._update_vertices(self._x, self._y, self._z)
         else:
-            self._update_groups(self._x, self._y, self._z, self._angle)
+            self._update_groups(self._x, self._y, self._z)
 
     def merge(self, other):
         if self.is_big and other.is_big:
@@ -806,33 +803,34 @@ class Piece:
             self.set_default_tray(tray)
             self.commit_position()
         elif self.is_big and other.is_small:
+            other._r = 0
             other.set_position(0, 0, 0)
             g = max(self.groups, key=(lambda group: group.size))
             g.size += other.size
             other.group = g
         elif self.is_small and other.is_big:
-            x, y, z = self.x, self.y, self.z
+            x, y, z, r = self.x, self.y, self.z, self.r
             tray = self.default_group.tray
-            self.set_position(0, 0, 0)
+            self.set_position(0, 0, 0, 0)
             self.groups = other.groups
             g = max(self.groups, key=(lambda group: group.size))
             g.size += self.size
             self.group = g
-            self.remember_position(x, y, z)
+            self.remember_position(x, y, z, r)
             self.set_default_tray(tray)
         elif self.is_small and other.is_small:
             if self.size + other.size >= PIECE_THRESHOLD:
-                x, y, z = self.x, self.y, self.z
-                self.set_position(0, 0, 0)
-                other.set_position(0, 0, 0)
+                x, y, z, r = self.x, self.y, self.z, self.r
+                self.set_position(0, 0, 0, 0)
+                other.set_position(0, 0, 0, 0)
                 tray = self.default_group.tray
                 group = PieceGroupFactory.new_big_group(tray)
                 group.size = self.size + other.size
                 self.groups = [group]
                 self.group = other.group = group
-                self.remember_position(x, y, z)
+                self.remember_position(x, y, z, r)
             else:
-                other.set_position(self.x, self.y, self.z)
+                other.set_position(self.x, self.y, self.z, self.r)
                 other.group = self.group
 
         self.polygons += other.polygons
@@ -858,6 +856,14 @@ class Piece:
     @property
     def z(self):
         return self._z
+
+    @property
+    def r(self):
+        return self._r
+
+    @property
+    def angle(self):
+        return self._r * math.pi / 2
 
     @property
     def group(self):
@@ -1065,11 +1071,12 @@ class Hand(pyglet.window.EventDispatcher):
             piece.set_position(
                 x - self.group.x,
                 y - self.group.y,
-                z - self.group.z
+                z - self.group.z,
+                piece.r
             )
-            piece.remember_position(x, y, z)
+            piece.remember_position(x, y, z, piece.r)
         else:
-            piece.set_position(x, y, z)
+            piece.set_position(x, y, z, piece.r)
 
     @property
     def is_empty(self):
