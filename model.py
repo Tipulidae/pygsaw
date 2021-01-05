@@ -87,6 +87,8 @@ class Model(EventDispatcher):
             neighbour = self.pieces[random.choice(list(piece.neighbours))]
             self.quadtree.remove(piece, piece.bbox)
 
+            if (rotation := neighbour.rotation - piece.rotation) != 0:
+                piece.rotate(rotation, Point(0, 0))
             piece.x = neighbour.x
             piece.y = neighbour.y
             self.dispatch_event(
@@ -94,7 +96,8 @@ class Model(EventDispatcher):
                 piece.pid,
                 piece.x,
                 piece.y,
-                piece.z
+                piece.z,
+                piece.rotation
             )
             self._merge_pieces(piece, neighbour)
             self.quadtree.insert(piece, piece.bbox)
@@ -135,7 +138,8 @@ class Model(EventDispatcher):
                     piece.pid,
                     piece.x,
                     piece.y,
-                    piece.z
+                    piece.z,
+                    piece.rotation
                 )
 
                 self._merge_pieces(piece, neighbour)
@@ -150,7 +154,8 @@ class Model(EventDispatcher):
             piece.pid,
             piece.x,
             piece.y,
-            piece.z
+            piece.z,
+            piece.rotation
         )
 
         self.quadtree.insert(piece, piece.bbox)

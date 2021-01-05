@@ -89,7 +89,7 @@ class PieceGroupFactory:
 
 
 class PieceGroup(pyglet.graphics.Group):
-    def __init__(self, texture, normal_map, tray=0, x=0, y=0, z=0, *args,
+    def __init__(self, texture, normal_map, tray=0, x=0, y=0, z=0, r=0, *args,
                  **kwargs):
         super().__init__(*args, **kwargs)
         self.texture = texture
@@ -98,6 +98,7 @@ class PieceGroup(pyglet.graphics.Group):
         self.x = x
         self.y = y
         self.z = z
+        self.r = r
         self.size = 0
         self.program = make_piece_shader()
         self.program.use()
@@ -633,8 +634,8 @@ class View(pyglet.window.EventDispatcher):
     def select_pieces(self, pids):
         self.hand.select_pieces({pid: self.pieces[pid] for pid in pids})
 
-    def move_piece(self, pid, x, y, z):
-        self.hand.move_piece(self.pieces[pid], x, y, z)
+    def move_piece(self, pid, x, y, z, r):
+        self.hand.move_piece(self.pieces[pid], x, y, z, r)
 
     def merge_pieces(self, pid1, pid2):
         self.pieces[pid1].merge(self.pieces[pid2])
@@ -803,8 +804,7 @@ class Piece:
             self.set_default_tray(tray)
             self.commit_position()
         elif self.is_big and other.is_small:
-            other._r = 0
-            other.set_position(0, 0, 0)
+            other.set_position(0, 0, 0, 0)
             g = max(self.groups, key=(lambda group: group.size))
             g.size += other.size
             other.group = g
@@ -1066,17 +1066,17 @@ class Hand(pyglet.window.EventDispatcher):
             for piece in self.pieces.values():
                 piece.remember_relative_position(dx, dy, 0)
 
-    def move_piece(self, piece, x, y, z):
+    def move_piece(self, piece, x, y, z, r):
         if piece.pid in self.pieces and piece.is_small:
             piece.set_position(
                 x - self.group.x,
                 y - self.group.y,
                 z - self.group.z,
-                piece.r
+                r - self.group.r
             )
-            piece.remember_position(x, y, z, piece.r)
+            piece.remember_position(x, y, z, r)
         else:
-            piece.set_position(x, y, z, piece.r)
+            piece.set_position(x, y, z, r)
 
     @property
     def is_empty(self):
