@@ -27,6 +27,7 @@ class FilePicker(tk.Frame):
         self.image_path = self.settings.image_path
         self.image_label = self.settings.image_path
         self.num_pieces = tk.IntVar(value=self.settings.num_pieces)
+        self.piece_rotation = tk.BooleanVar(value=self.settings.piece_rotation)
         self.create_widgets()
         self.callback = callback
 
@@ -50,6 +51,12 @@ class FilePicker(tk.Frame):
             textvariable=self.num_pieces,
             validate='key',
             validatecommand=(command, '%P')
+        ).pack()
+
+        tk.Checkbutton(
+            self,
+            text='Piece rotation',
+            variable=self.piece_rotation
         ).pack()
 
         tk.Button(self, text='Done', command=self.done).pack()
@@ -82,6 +89,7 @@ class FilePicker(tk.Frame):
     def done(self):
         self.settings.num_intended_pieces = self.num_pieces.get()
         self.settings.image_path = self.image_path
+        self.settings.piece_rotation = self.piece_rotation.get()
         self.callback(self.settings)
         self.master.destroy()
 
