@@ -10,37 +10,25 @@ from view import View, Jigsaw
 
 class Controller:
     def __init__(self, puzzle_settings, window_settings):
-        self.model = None
-        self.view = None
-        self.big_piece_threshold = puzzle_settings['big_piece_threshold']
+        # self.big_piece_threshold = puzzle_settings['big_piece_threshold']
         self.window = Jigsaw(**window_settings)
         self.window.push_handlers(self)
-        self.image_path = None
-        self._new_puzzle(
-            f"resources/{puzzle_settings['image_path']}",
-            puzzle_settings['num_pieces'],
-            puzzle_settings['piece_rotation']
-        )
+        self.model = None
+        self.view = View(self.window)
+        self._new_puzzle(puzzle_settings)
 
-    def _new_puzzle(self, image_path, num_intended_pieces, piece_rotation=False):
-        self.image_path = image_path
-        texture = pyglet.image.load(image_path).get_texture()
+    def _new_puzzle(self, settings):
+        texture = pyglet.image.load(settings.image_path).get_texture()
+        settings.set_dimensions(texture.width, texture.height)
 
-        self.model = Model()
-        self.model.reset(
-            image_path,
-            texture.width,
-            texture.height,
-            num_intended_pieces,
-            piece_rotation=piece_rotation
-        )
-        self.view = View(
+        self.model = Model(settings)
+        self.model.reset()
+        self.view = View(self.window)
+        self.view.reset(
             texture,
-            image_path,
-            self.big_piece_threshold,
+            self.model.get_piece_data(),
             self.model.trays.visible_trays,
-            piece_data=self.model.get_piece_data(),
-            window=self.window
+            settings
         )
 
         self.model.push_handlers(self)
@@ -50,18 +38,16 @@ class Controller:
         self.model.toggle_pause(False)
         self.view.toggle_pause(False)
 
-    def on_new_game(self, image_path, num_pieces):
+    def on_new_game(self, settings):
         self.window.pop_handlers()
         self.view.destroy_pieces()
-        self._new_puzzle(image_path, num_pieces)
+        self._new_puzzle(settings)
 
     def on_quicksave(self):
         print("quicksave!")
         dump(
             obj=self.model.to_dict(),
-            path=f'.savegame/'
-                 f'{os.path.basename(self.image_path)[:-4]}_'
-                 f'{self.model.num_pieces}.sav',
+            path=f'.savegame/{self.model}.sav',
             compression='bz2',
             set_default_extension=False
         )
@@ -76,17 +62,16 @@ class Controller:
             compression='bz2',
             set_default_extension=False
         )
+        settings = data['settings']
         self.model = Model.from_dict(data)
-        self.image_path = data['image_path']
-        texture = pyglet.image.load(self.image_path).get_texture()
+        texture = pyglet.image.load(settings.image_path).get_texture()
 
-        self.view = View(
-            texture,
-            self.image_path,
-            self.big_piece_threshold,
-            self.model.trays.visible_trays,
+        self.view = View(self.window)
+        self.view.reset(
+            texture=texture,
             piece_data=self.model.get_piece_data(),
-            window=self.window
+            visible_trays=self.model.trays.visible_trays,
+            settings=settings
         )
 
         self.model.push_handlers(self)
@@ -156,8 +141,8 @@ class Controller:
         self.model.toggle_pause(is_paused)
         self.view.toggle_pause(is_paused)
 
-    def on_win(self, elapsed_seconds, num_pieces):
-        self.view.game_over(elapsed_seconds, num_pieces)
+    def on_win(self, elapsed_seconds):
+        self.view.game_over(elapsed_seconds)
 
 
 def _most_recently_modified_file_in_folder(path):

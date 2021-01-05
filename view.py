@@ -19,7 +19,7 @@ from bezier import Point, rotate_points, center_point
 
 
 GROUP_COUNT = 2
-PIECE_THRESHOLD = 50
+PIECE_THRESHOLD = 3
 MAX_Z_DEPTH = 5000000
 
 PAN_KEYS = [key.W, key.A, key.S, key.D]
@@ -104,6 +104,12 @@ class PieceGroup(pyglet.graphics.Group):
         self.program['diffuse_map'] = 0
         self.program['normal_map'] = 1
         self.program['hide_borders'] = 0
+        self.program['rotation'] = (
+            1, 0, 0, 0,
+            0, 1, 0, 0,
+            0, 0, 1, 0,
+            0, 0, 0, 1
+        )
         self.program.stop()
 
     def move(self, dx, dy, dz):
@@ -115,6 +121,18 @@ class PieceGroup(pyglet.graphics.Group):
         self.z = z
         self.program.use()
         self.program['translate'] = (x, y, z)
+        self.program.stop()
+
+    def set_rotation(self, angle):
+        c = math.cos(angle)
+        s = math.sin(angle)
+        self.program.use()
+        self.program['rotation'] = (
+            c, s, 0, 0,
+            -s, c, 0, 0,
+            0, 0, 1, 0,
+            0, 0, 0, 1
+        )
         self.program.stop()
 
     def set_visibility(self, is_visible):
@@ -399,19 +417,12 @@ class NumberKeys:
 
 
 class View(pyglet.window.EventDispatcher):
-    def __init__(
-            self,
-            texture,
-            image_path,
-            big_piece_threshold,
-            visible_trays,
-            piece_data,
-            window):
-        self.image_path = image_path
+    def __init__(self, window):
         self.window = window
         self.window.push_handlers(self)
         self.projection = self.window.my_projection
         self.selection_box = SelectionBox(self.window.batch)
+
         self.pieces = None
         self.hand = None
         self.number_keys = NumberKeys()
@@ -420,13 +431,16 @@ class View(pyglet.window.EventDispatcher):
         self.is_paused = False
 
         self.table = Table(self.window.batch)
+        self.settings = None
 
-        self.reset(texture, piece_data, visible_trays)
+        self.light_dir = 0
+        # self.reset(texture, piece_data, visible_trays)
 
-        global PIECE_THRESHOLD
-        PIECE_THRESHOLD = big_piece_threshold
+        # global PIECE_THRESHOLD
+        # PIECE_THRESHOLD = big_piece_threshold
 
-    def reset(self, texture, piece_data, visible_trays):
+    def reset(self, texture, piece_data, visible_trays, settings):
+        self.settings = settings
         self.texture = texture
         polygons = itertools.chain.from_iterable(
             map(lambda pd: pd['polygons'].values(), piece_data)
@@ -457,12 +471,11 @@ class View(pyglet.window.EventDispatcher):
 
         self.table.destroy_table()
 
-    def new_jigsaw(self, image_path, num_pieces):
+    def new_jigsaw(self, settings):
         self.hand.drop_everything()
         self.dispatch_event(
             'on_new_game',
-            image_path,
-            num_pieces
+            settings
         )
 
     def create_piece(self, pid, polygons, position, rotation, width, height, tray):
@@ -532,17 +545,25 @@ class View(pyglet.window.EventDispatcher):
             self.hand.move(dx, dy)
 
     def on_mouse_scroll(self, x_, y_, scroll_x, scroll_y):
-        if self.is_paused or self.window.keys[key.LCTRL]:
-            return
-
-        x, y = self.projection.view_to_clip_coord(x_, y_)
-        self.dispatch_event('on_scroll', x, y, scroll_y)
+        def allow_rotation():
+            return (
+                self.settings.piece_rotation
+                and self.hand.is_empty
+                and not self.is_paused
+                and not self.window.keys[key.LCTRL]
+            )
+        if allow_rotation():
+            x, y = self.projection.view_to_clip_coord(x_, y_)
+            self.dispatch_event('on_scroll', x, y, scroll_y)
 
     def on_key_press(self, symbol, modifiers):
         if symbol == key.PAUSE:
             self.dispatch_event('on_pause', not self.is_paused)
         if symbol == key.R and modifiers & key.MOD_CTRL:
-            select_image(callback=self.new_jigsaw, image_path=self.image_path)
+            select_image(
+                callback=self.new_jigsaw,
+                settings=self.settings
+            )
 
         if self.is_paused:
             return
@@ -628,7 +649,6 @@ class View(pyglet.window.EventDispatcher):
         self.hand.drop_pieces(pids)
 
     def rotate_piece(self, pid, rotation, position):
-        # self.pieces[pid].rotation = rotation
         self.pieces[pid].rotate(rotation, position)
 
     def set_visibility(self, tray, is_visible):
@@ -640,13 +660,14 @@ class View(pyglet.window.EventDispatcher):
             f"{format_timespan(elapsed_seconds)}"
         )
 
-    def game_over(self, elapsed_seconds, num_pieces):
+    def game_over(self, elapsed_seconds):
         PieceGroupFactory.set_border_visibility(hide_borders=True)
         print(
             f"Congratulations, you won! \n"
-            f"Image: {self.image_path}, "
-            f"pieces: {num_pieces}, "
-            f"elapsed time: {format_timespan(elapsed_seconds)}"
+            f"Image: {self.settings.image_path} \n"
+            f"Dimensions: {self.settings.nx} * {self.settings.ny} = {self.settings.num_pieces} \n"
+            f"Elapsed time: {format_timespan(elapsed_seconds)} \n"
+            f"Piece rotation: {self.settings.piece_rotation}"
         )
 
 
@@ -710,7 +731,8 @@ class Piece:
             indices,
             ('position3f/static', tuple(vertices)),
             ('colors4Bn/static', (255, 255, 255, 255) * n),
-            ('tex_coords3f/static', tuple(tex_coords))
+            ('tex_coords3f/static', tuple(tex_coords)),
+            ('orientation1f/dynamic', (0.0,) * n)
         )
         return vertex_list
 
@@ -721,33 +743,33 @@ class Piece:
 
     def rotate(self, rotation, position):
         self._rotation = rotation
-
-        if self.is_small:
-            self._angle = self._rotation * math.pi / 2
-            self._x = position.x
-            self._y = position.y
-            self.commit_position()
+        self._angle = self._rotation * math.pi / 2
+        self._x = position.x
+        self._y = position.y
+        self.commit_position()
 
     def set_position(self, x, y, z):
         self._x, self._y, self._z = x, y, z
         if self.is_small:
-            self._update_vertices(x, y, z)
+            self._update_vertices(x, y, z, self._angle)
         else:
-            self._update_groups(x, y, z)
+            self._update_groups(x, y, z, self._angle)
 
-    def _update_vertices(self, x, y, z):
+    def _update_vertices(self, x, y, z, angle):
         for polygon, vertex_list in zip(self.polygons, self.vertex_list):
             new_vertex_list = []
-            for p in rotate_points(polygon, Point(0, 0), self._angle):
+            for p in rotate_points(polygon, Point(0, 0), angle):
                 new_vertex_list.append(p.x + x)
                 new_vertex_list.append(p.y + y)
                 new_vertex_list.append(z)
 
             vertex_list.position[:] = tuple(new_vertex_list)
+            vertex_list.orientation[:] = (self._rotation, ) * len(polygon)
 
-    def _update_groups(self, x, y, z):
+    def _update_groups(self, x, y, z, angle):
         for group in self.groups:
             group.set_position(x, y, z)
+            group.set_rotation(angle)
 
     def set_default_tray(self, tray):
         if self.is_small:
@@ -773,9 +795,9 @@ class Piece:
 
     def commit_position(self):
         if self.is_small:
-            self._update_vertices(self._x, self._y, self._z)
+            self._update_vertices(self._x, self._y, self._z, self._angle)
         else:
-            self._update_groups(self._x, self._y, self._z)
+            self._update_groups(self._x, self._y, self._z, self._angle)
 
     def merge(self, other):
         if self.is_big and other.is_big:
@@ -836,21 +858,6 @@ class Piece:
     @property
     def z(self):
         return self._z
-
-    @property
-    def rotation(self):
-        return self._rotation
-
-    @rotation.setter
-    def rotation(self, rotation):
-        self._rotation = rotation
-
-        if self.is_small:
-            self._angle = rotation * math.pi / 2
-            self._pivot = center_point(
-                itertools.chain.from_iterable(self.polygons))
-
-            self.commit_position()
 
     @property
     def group(self):
