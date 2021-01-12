@@ -15,11 +15,11 @@ import earcut
 from shaders import make_piece_shader, make_shape_shader, make_table_shader
 from textures import make_normal_map
 from file_picker import select_image
-from bezier import Point, rotate_points, center_point
+from bezier import Point, rotate_points
 
 
 GROUP_COUNT = 2
-PIECE_THRESHOLD = 3
+PIECE_THRESHOLD = 50
 MAX_Z_DEPTH = 5000000
 
 PAN_KEYS = [key.W, key.A, key.S, key.D]
@@ -191,10 +191,6 @@ class TableGroup(pyglet.graphics.Group):
         self.program.use()
         gl.glActiveTexture(gl.GL_TEXTURE0)
         gl.glBindTexture(self.texture.target, self.texture.id)
-        # gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_WRAP_S,
-        #                    gl.GL_MIRRORED_REPEAT)
-        # gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_WRAP_T,
-        #                    gl.GL_MIRRORED_REPEAT)
         gl.glEnable(gl.GL_DEPTH_TEST)
         gl.glDepthFunc(gl.GL_LESS)
 
@@ -207,9 +203,12 @@ class TableGroup(pyglet.graphics.Group):
         return f"{self.__class__.__name__}()"
 
     def __eq__(self, other):
-        return (other.__class__ is self.__class__ and
-                self.program is other.program and
-                self.parent is other.parent)
+        return (
+            other.__class__ is self.__class__ and
+            self.program == other.program and
+            self.parent == other.parent and
+            self.texture.target == other.texture.target
+        )
 
     def __hash__(self):
         return hash((id(self.parent), id(self.program)))
@@ -431,10 +430,9 @@ class View(pyglet.window.EventDispatcher):
         self.normal_map = None
         self.is_paused = False
 
-        self.table = Table(self.window.batch)
+        self.table = None
         self.settings = None
 
-        self.light_dir = 0
         # self.reset(texture, piece_data, visible_trays)
 
         # global PIECE_THRESHOLD
@@ -459,6 +457,7 @@ class View(pyglet.window.EventDispatcher):
 
         self.pieces = dict()
         self.hand = Hand()
+        self.table = Table(self.window.batch)
         self.projection.push_handlers(on_pan=self.hand.move)
         self.projection.push_handlers(on_pan=self.selection_box.drag)
 
@@ -898,14 +897,15 @@ class Table:
 
     def destroy_table(self):
         self.vertex_list.delete()
+        self.vertex_list = None
 
     def create_table(self):
         image_path = self.image_paths[self.index]
         texture = pyglet.image.load(image_path).get_texture()
         self.group.texture = texture
 
-        table_width = 32768
-        table_height = 32768
+        table_width = 131072
+        table_height = 131072
         original_vertices = [
             -table_width/2, -table_height/2, -1,
             table_width/2, -table_height/2, -1,

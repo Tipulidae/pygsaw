@@ -10,11 +10,10 @@ from view import View, Jigsaw
 
 class Controller:
     def __init__(self, puzzle_settings, window_settings):
-        # self.big_piece_threshold = puzzle_settings['big_piece_threshold']
         self.window = Jigsaw(**window_settings)
         self.window.push_handlers(self)
         self.model = None
-        self.view = View(self.window)
+        self.view = None
         self._new_puzzle(puzzle_settings)
 
     def _new_puzzle(self, settings):
