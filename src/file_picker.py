@@ -14,10 +14,6 @@ class FilePicker(tk.Frame):
             *args,
             callback=None,
             settings=None,
-            # image_path='resources',
-            # intended_pieces=16,
-            # snap_distance_percent=50,
-            # piece_rotation=False,
             **kwargs):
         super().__init__(*args, **kwargs)
         self.pack()

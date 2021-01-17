@@ -11,11 +11,11 @@ from tqdm import tqdm
 from pyglet.math import Mat4
 from humanfriendly import format_timespan
 
-import earcut
-from shaders import make_piece_shader, make_shape_shader, make_table_shader
-from textures import make_normal_map
-from file_picker import select_image
-from bezier import Point, rotate_points
+from src import earcut
+from src.shaders import make_piece_shader, make_shape_shader, make_table_shader
+from src.textures import make_normal_map
+from src.file_picker import select_image
+from src.bezier import Point, rotate_points
 
 
 GROUP_COUNT = 2
@@ -884,7 +884,7 @@ class Piece:
 class Table:
     def __init__(self, batch):
         self.batch = batch
-        self.image_paths = glob.glob('resources/textures/*.jpg')
+        self.image_paths = glob.glob('resources/background_images/*.jpg')
         self.index = 0
         self.group = TableGroup(None)
         self.vertex_list = None

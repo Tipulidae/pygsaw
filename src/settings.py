@@ -7,8 +7,8 @@ from dataclasses import dataclass
 class Settings:
     image_path: str
     num_intended_pieces: int = 16
-    nx: int = 0
-    ny: int = 0
+    nx: int = 4
+    ny: int = 4
     image_width: int = 0
     image_height: int = 0
     snap_distance_percent: float = 0.5

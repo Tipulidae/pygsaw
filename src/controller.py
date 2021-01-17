@@ -4,8 +4,8 @@ import glob
 import pyglet
 from compress_pickle import dump, load
 
-from model import Model
-from view import View, Jigsaw
+from src.model import Model
+from src.view import View, Jigsaw
 
 
 class Controller:
@@ -44,9 +44,12 @@ class Controller:
 
     def on_quicksave(self):
         print("quicksave!")
+        if not os.path.exists('saves'):
+            os.makedirs('saves')
+
         dump(
             obj=self.model.to_dict(),
-            path=f'.savegame/{self.model}.sav',
+            path=f'saves/{self.model}.sav',
             compression='bz2',
             set_default_extension=False
         )
@@ -57,7 +60,7 @@ class Controller:
         self.view.destroy_pieces()
 
         data = load(
-            _most_recently_modified_file_in_folder('.savegame'),
+            _most_recently_modified_file_in_folder('saves'),
             compression='bz2',
             set_default_extension=False
         )

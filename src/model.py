@@ -11,8 +11,8 @@ from pyglet.window import EventDispatcher
 from tqdm import tqdm
 from pyqtree import Index as QuadTree
 
-from database import save_statistics
-from bezier import Point, Rectangle, make_random_edges, bounding_box, \
+from src.database import save_statistics
+from src.bezier import Point, Rectangle, make_random_edges, bounding_box, \
     point_in_polygon
 
 
@@ -594,43 +594,6 @@ def create_neighbours(pid, n, nx):
     ))
 
 
-def create_jigsaw_dimensions(n, w, h):
-    """
-    Tries to figure out how many columns and rows there should be in a grid
-    like jigsaw, given that we want n "almost square" pieces, and the image
-    dimensions. Works by defining and evaluating a cost function on a set of
-    numbers that is likely to contain a good approximation.
-    :param n: Number of pieces that we want in the jigsaw
-    :param w: Width of the jigsaw image
-    :param h: Height of the jigsaw image
-    :return: (nx, ny) tuple, where nx * ny is close to n and nx/ny is close to
-    w/h.
-    """
-    r = w / h
-    sqrtn = math.sqrt(n)
-    ny1 = math.floor(sqrtn/r)
-    nx1 = math.floor(sqrtn*r)
-
-    nx_min = min(nx1, math.floor(sqrtn)) - 1
-    nx_max = max(nx1, math.ceil(sqrtn)) + 1
-    ny_min = min(ny1, math.floor(sqrtn)) - 1
-    ny_max = max(ny1, math.ceil(sqrtn)) + 1
-
-    combinations = [
-        (x, y)
-        for x in range(nx_min, nx_max+1)
-        for y in range(ny_min, ny_max+1)
-    ]
-
-    def cost(nxnyn):
-        # I want to penalize wrong number of pieces more than wrong aspect
-        # ratio of pieces
-        nx, ny, _ = nxnyn
-        return abs((r * ny/nx)**2 - 1) + 3 * abs((nx * ny / n) ** 2 - 1)
-
-    return min([(nx, ny, nx * ny) for nx, ny in combinations], key=cost)
-
-
 def point_to_pid(p, nx, width, height):
     return int(
         ((p.x - width / 2) // width) % nx +
@@ -640,12 +603,6 @@ def point_to_pid(p, nx, width, height):
 
 def origin_of_pid(pid, nx, width, height):
     return Point(width * (pid % nx), height * (pid // nx))
-
-
-def center_of_piece_near_point(p, nx, width, height):
-    pid = point_to_pid(p, nx, width, height)
-    origin = origin_of_pid(pid, nx, width, height)
-    return origin + Point(width, height)
 
 
 def closest_neighbour_pid(pid, point, width, height, nx):

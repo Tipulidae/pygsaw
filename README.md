@@ -41,10 +41,9 @@ outlined below.
 * Saving and loading (although at the moment you can only load the most recently saved game. To load another game you would have to move or delete any more recent saves.)
 * Records statistics of finished game in a local database
 * Cheat function to automatically connect random pieces
-
+* Piece rotation - allowing pieces to be rotated.
 
 ## Planned features
-* Piece rotation - allowing pieces to be rotated.
 * Better saving/loading (specify which file to load, and name of the save file)
 * Configurable keybindings
 * Image preview
@@ -65,8 +64,12 @@ outlined below.
 * Selection box: SHIFT+LEFT MOUSE BUTTON, drag to create selection box
 * Unselect piece(s): ESCAPE
 * Move selected pieces: Click and drag
-* Zoom in/out: SCROLL UP/DOWN
-* Pan view: WASD
+* Zoom in/out: CTRL + SCROLL UP/DOWN
+* Rotate piece: SCROLL UP/DOWN
+* Pan up: W
+* Pan left: A
+* Pan down: S
+* Pan right: D
 * Arrange selected pieces in a grid: SPACEBAR
 * Move selected pieces to tray {0-9}: {0-9} keys
 * Move piece to tray {0-9}: Click on piece while pressing {0-9} key
@@ -77,7 +80,7 @@ outlined below.
 * Pause/unpause game: PAUSE
 * Show progress: PERIOD (.)
 * Toggle piece edges: COMMA (,)
-* Toggle background image: T
+* Toggle background image: T (you can put your own image in resources/background_images)
 * Connect two random pieces (cheat): C
 * Connect 100 random pieces (cheat): X
 

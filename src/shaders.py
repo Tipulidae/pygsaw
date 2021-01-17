@@ -184,7 +184,6 @@ def make_table_shader():
     return ShaderProgram(vs, fs)
 
 
-
 def write_to_uniform(program, name, data):
     pid = gl.GLuint(program.id)
     loc = gl.glGetUniformLocation(pid, name.encode('utf8'))
