@@ -1,5 +1,4 @@
 from src.model import Tray, Model
-from src.settings import Settings
 
 
 class TestTray:
@@ -117,7 +116,7 @@ class TestTray:
 
 class TestSerialize:
     def test_can_serialize_model(self):
-        model = Model(Settings('kitten.png', image_width=500, image_height=500))
+        model = Model()
         model.reset()
         model_dict = model.to_dict()
         new_model = Model.from_dict(model_dict)

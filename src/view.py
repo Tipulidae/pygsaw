@@ -11,6 +11,7 @@ from tqdm import tqdm
 from pyglet.math import Mat4
 from humanfriendly import format_timespan
 
+import src.settings as settings
 from src import earcut
 from src.shaders import make_piece_shader, make_shape_shader, make_table_shader
 from src.textures import make_normal_map
@@ -19,7 +20,6 @@ from src.bezier import Point, rotate_points
 
 
 GROUP_COUNT = 2
-PIECE_THRESHOLD = 50
 MAX_Z_DEPTH = 5000000
 
 PAN_KEYS = [key.W, key.A, key.S, key.D]
@@ -112,6 +112,7 @@ class PieceGroup(pyglet.graphics.Group):
             0, 0, 0, 1
         )
         self.program.stop()
+        print(f"PieceGroup.__init__ - {self.program=}")
 
     def move(self, dx, dy, dz):
         self.set_position(self.x + dx, self.y + dy, self.z + dz)
@@ -243,6 +244,9 @@ class OrthographicProjection(pyglet.window.EventDispatcher):
         self.zoom_level = zoom
         self._view = None
         self.program = pyglet.graphics.get_default_shader()
+        self.program.use()
+        self.ubo = self.program.uniform_blocks['WindowBlock'].create_ubo()
+        self.program.stop()
         self.update()
 
     def view_to_clip_coord(self, x, y):
@@ -293,10 +297,10 @@ class OrthographicProjection(pyglet.window.EventDispatcher):
     def update(self):
         width = max(1, self.view_port.width)
         height = max(1, self.view_port.height)
-
         pyglet.gl.glViewport(0, 0, width, height)
 
-        with self.program.uniform_buffers['WindowBlock'] as window_block:
+        self.program.use()
+        with self.ubo as window_block:
             window_block.projection[:] = Mat4.orthogonal_projection(
                 self.clip_port.left,
                 self.clip_port.right,
@@ -309,14 +313,19 @@ class OrthographicProjection(pyglet.window.EventDispatcher):
                 self._view = Mat4()
                 window_block.view[:] = self._view
 
+        self.program.stop()
+
 
 class Jigsaw(pyglet.window.Window):
-    def __init__(self, pan_speed=0.8, **kwargs):
-        super().__init__(**kwargs)
+    def __init__(self):
+        super().__init__(
+            width=settings.window.width,
+            height=settings.window.height,
+            resizable=settings.window.resizeable,
+            vsync=settings.window.vsync
+        )
         self.batch = pyglet.graphics.Batch()
-        self.fps = pyglet.window.FPSDisplay(window=self)
-        self.pan_speed = pan_speed
-        self.my_projection = OrthographicProjection(
+        self.jigsaw_projection = OrthographicProjection(
             *self.get_framebuffer_size(),
             zoom=1.0
         )
@@ -327,7 +336,7 @@ class Jigsaw(pyglet.window.Window):
         self.is_paused = False
 
     def on_resize(self, width, height):
-        self.my_projection.change_window_size(
+        self.jigsaw_projection.change_window_size(
             self.old_width,
             self.old_height,
             width,
@@ -335,6 +344,8 @@ class Jigsaw(pyglet.window.Window):
         )
         self.old_width = width
         self.old_height = height
+        settings.window.width = width
+        settings.window.height = height
 
     def on_draw(self):
         self.clear()
@@ -353,20 +364,20 @@ class Jigsaw(pyglet.window.Window):
 
         if self.keys[key.LCTRL]:
             if scroll_y > 0:
-                self.my_projection.zoom(1.25, x, y)
+                self.jigsaw_projection.zoom(1.25, x, y)
             elif scroll_y < 0:
-                self.my_projection.zoom(0.8, x, y)
+                self.jigsaw_projection.zoom(0.8, x, y)
 
     def update(self, dt):
         if self.keys[key.W]:
-            self.my_projection.pan(0, self.pan_speed * dt)
+            self.jigsaw_projection.pan(0, settings.gameplay.pan_speed * dt)
         elif self.keys[key.S]:
-            self.my_projection.pan(0, -self.pan_speed * dt)
+            self.jigsaw_projection.pan(0, -settings.gameplay.pan_speed * dt)
 
         if self.keys[key.A]:
-            self.my_projection.pan(-self.pan_speed * dt, 0)
+            self.jigsaw_projection.pan(-settings.gameplay.pan_speed * dt, 0)
         elif self.keys[key.D]:
-            self.my_projection.pan(self.pan_speed * dt, 0)
+            self.jigsaw_projection.pan(settings.gameplay.pan_speed * dt, 0)
 
     def on_key_press(self, symbol, modifiers):
         if self.is_paused:
@@ -420,7 +431,7 @@ class View(pyglet.window.EventDispatcher):
     def __init__(self, window):
         self.window = window
         self.window.push_handlers(self)
-        self.projection = self.window.my_projection
+        self.projection = self.window.jigsaw_projection
         self.selection_box = SelectionBox(self.window.batch)
 
         self.pieces = None
@@ -429,17 +440,9 @@ class View(pyglet.window.EventDispatcher):
         self.texture = None
         self.normal_map = None
         self.is_paused = False
-
         self.table = None
-        self.settings = None
 
-        # self.reset(texture, piece_data, visible_trays)
-
-        # global PIECE_THRESHOLD
-        # PIECE_THRESHOLD = big_piece_threshold
-
-    def reset(self, texture, piece_data, visible_trays, settings):
-        self.settings = settings
+    def reset(self, texture, piece_data, visible_trays):
         self.texture = texture
         polygons = itertools.chain.from_iterable(
             map(lambda pd: pd['polygons'].values(), piece_data)
@@ -471,12 +474,9 @@ class View(pyglet.window.EventDispatcher):
 
         self.table.destroy_table()
 
-    def new_jigsaw(self, settings):
+    def new_jigsaw(self, s):
         self.hand.drop_everything()
-        self.dispatch_event(
-            'on_new_game',
-            settings
-        )
+        self.dispatch_event('on_new_game', s)
 
     def create_piece(self, pid, polygons, position, rotation, width, height, tray):
         self.pieces[pid] = Piece(
@@ -545,14 +545,13 @@ class View(pyglet.window.EventDispatcher):
             self.hand.move(dx, dy)
 
     def on_mouse_scroll(self, x_, y_, scroll_x, scroll_y):
-        def allow_rotation():
-            return (
-                self.settings.piece_rotation
-                and self.hand.is_empty
-                and not self.is_paused
-                and not self.window.keys[key.LCTRL]
-            )
-        if allow_rotation():
+        allow_rotation = (
+            settings.gameplay.piece_rotation
+            and self.hand.is_empty
+            and not self.is_paused
+            and not self.window.keys[key.LCTRL]
+        )
+        if allow_rotation:
             x, y = self.projection.view_to_clip_coord(x_, y_)
             self.dispatch_event('on_scroll', x, y, scroll_y)
 
@@ -562,8 +561,13 @@ class View(pyglet.window.EventDispatcher):
         if symbol == key.R and modifiers & key.MOD_CTRL:
             select_image(
                 callback=self.new_jigsaw,
-                settings=self.settings
+                image_path=settings.image.path,
+                intended_pieces=settings.gameplay.num_intended_pieces,
+                piece_rotation=settings.gameplay.piece_rotation
             )
+            # Not the prettiest solution, but without it
+            # the Ctrl-key might become "stuck" after the window is closed.
+            self.window.keys[key.LCTRL] = False
 
         if self.is_paused:
             return
@@ -664,10 +668,11 @@ class View(pyglet.window.EventDispatcher):
         PieceGroupFactory.set_border_visibility(hide_borders=True)
         print(
             f"Congratulations, you won! \n"
-            f"Image: {self.settings.image_path} \n"
-            f"Dimensions: {self.settings.nx} * {self.settings.ny} = {self.settings.num_pieces} \n"
+            f"Image: {settings.image.path} \n"
+            f"Dimensions: {settings.gameplay.nx} * {settings.gameplay.ny} = "
+            f"{settings.gameplay.num_pieces} \n"
             f"Elapsed time: {format_timespan(elapsed_seconds)} \n"
-            f"Piece rotation: {self.settings.piece_rotation}"
+            f"Piece rotation: {settings.gameplay.piece_rotation}"
         )
 
 
@@ -818,7 +823,7 @@ class Piece:
             self.remember_position(x, y, z, r)
             self.set_default_tray(tray)
         elif self.is_small and other.is_small:
-            if self.size + other.size >= PIECE_THRESHOLD:
+            if self.size + other.size >= settings.gameplay.big_piece_threshold:
                 x, y, z, r = self.x, self.y, self.z, self.r
                 self.set_position(0, 0, 0, 0)
                 other.set_position(0, 0, 0, 0)
@@ -838,7 +843,8 @@ class Piece:
 
     @property
     def is_big(self):
-        return self.size >= PIECE_THRESHOLD or len(self.groups) > 0
+        return self.size >= settings.gameplay.big_piece_threshold or \
+               len(self.groups) > 0
 
     @property
     def is_small(self):

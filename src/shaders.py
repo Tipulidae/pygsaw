@@ -119,6 +119,35 @@ shape_fs = """#version 330 core
     }
 """
 
+gui_vs = """#version 330 core
+    in vec4 position;
+    in vec4 colors;
+
+    out vec4 vertex_colors;
+
+    uniform WindowBlock
+    {
+        mat4 projection;
+        mat4 view;
+    } window;
+
+    void main()
+    {
+        gl_Position = window.projection * window.view * position;
+        vertex_colors = colors;
+    }
+"""
+
+gui_fs = """#version 330 core
+    in vec4 vertex_colors;
+    out vec4 final_color;
+
+    void main()
+    {
+        final_color = vertex_colors;
+    }
+"""
+
 
 table_vs = """#version 330 core
     in vec4 position;
@@ -181,6 +210,12 @@ def make_shape_shader():
 def make_table_shader():
     vs = Shader(table_vs, 'vertex')
     fs = Shader(table_fs, 'fragment')
+    return ShaderProgram(vs, fs)
+
+
+def make_gui_shader():
+    vs = Shader(gui_vs, 'vertex')
+    fs = Shader(gui_fs, 'fragment')
     return ShaderProgram(vs, fs)
 
 

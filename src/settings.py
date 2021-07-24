@@ -4,33 +4,49 @@ from dataclasses import dataclass
 
 
 @dataclass
-class Settings:
-    image_path: str
+class Window:
+    width: int = 1500
+    height: int = 1100
+    resizeable: bool = True
+    vsync: bool = False
+    refresh_interval: float = 1/120
+
+
+@dataclass
+class Image:
+    path: str = 'resources/images/kitten.png'
+    width: int = 1
+    height: int = 1
+
+
+@dataclass
+class Gameplay:
     num_intended_pieces: int = 16
     nx: int = 4
     ny: int = 4
-    image_width: int = 0
-    image_height: int = 0
-    snap_distance_percent: float = 0.5
     piece_rotation: bool = True
-    big_piece_threshold: int = 3
+    snap_distance_percent: float = 0.5
+    big_piece_threshold: int = 50
+    pan_speed: float = 0.8
 
     @property
     def num_pieces(self):
         return self.nx * self.ny
 
-    def set_dimensions(self, w, h):
+    @property
+    def snap_distance(self):
+        return self.snap_distance_percent * image.width / self.nx
+
+    def set_dimensions(self):
         """
         Tries to figure out how many columns and rows there should be in a grid
         like jigsaw, given that we want n "almost square" pieces, and the image
         dimensions. Works by defining and evaluating a cost function on a set of
         numbers that is likely to contain a good approximation.
-        :param w: Width of the jigsaw image
-        :param h: Height of the jigsaw image
-        :return: (nx, ny) tuple, where nx * ny is close to n and nx/ny is close to
-        w/h.
+        :return: (nx, ny) tuple, where nx * ny is close to n and nx/ny is close
+        to w/h.
         """
-        r = w / h
+        r = image.width / image.height
         n = self.num_intended_pieces
         sqrtn = math.sqrt(n)
         ny1 = math.floor(sqrtn/r)
@@ -54,22 +70,14 @@ class Settings:
             return abs((r * ny/nx)**2 - 1) + 3 * abs((nx * ny / n) ** 2 - 1)
 
         self.nx, self.ny = min([(nx, ny) for nx, ny in combinations], key=cost)
-        self.image_width = w
-        self.image_height = h
 
-    @property
-    def snap_distance(self):
-        return self.snap_distance_percent * self.image_width / self.nx
 
-    def __eq__(self, other):
-        return (
-            self.image_path == other.image_path,
-            self.num_intended_pieces == other.num_intended_pieces,
-            self.nx == other.nx,
-            self.ny == other.ny,
-            self.image_width == other.image_width,
-            self.image_height == other.image_height,
-            self.snap_distance_percent == other.snap_distance_percent,
-            self.piece_rotation == other.piece_rotation,
-            self.big_piece_threshold == other.big_piece_threshold
-        )
+# These will now act as singletons if you import settings as a module.
+# Ex:
+# from src import settings
+# print(settings.window.width)
+# > 1500
+
+window = Window()
+image = Image()
+gameplay = Gameplay()

@@ -4,46 +4,48 @@ import itertools
 import time
 import pathlib
 from datetime import datetime
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from typing import List, Set, Dict
 
 from pyglet.window import EventDispatcher
 from tqdm import tqdm
 from pyqtree import Index as QuadTree
 
+import src.settings as settings
 from src.database import save_statistics
 from src.bezier import Point, Rectangle, make_random_edges, bounding_box, \
     point_in_polygon
 
 
 class Model(EventDispatcher):
-    def __init__(self, settings):
-        self.settings = settings
+    def __init__(self):
         self.pieces = None
         self.trays = None
         self.quadtree = None
-        self.current_max_z_level = self.settings.num_pieces
+        self.current_max_z_level = settings.gameplay.num_pieces
         self.timer = Timer()
         self.start_time = datetime.now()
         self.cheated = False
 
     def reset(self):
-        self.current_max_z_level = self.settings.num_pieces
-        self.trays = Tray(num_pids=self.settings.num_pieces)
+        self.current_max_z_level = settings.gameplay.num_pieces
+        self.trays = Tray(num_pids=settings.gameplay.num_pieces)
         self.quadtree = QuadTree(bbox=(-100000, -100000, 100000, 100000))
         self.pieces = make_jigsaw_cut(
-            self.settings.image_width,
-            self.settings.image_height,
-            self.settings.nx,
-            self.settings.ny,
-            self.settings.piece_rotation
+            settings.image.width,
+            settings.image.height,
+            settings.gameplay.nx,
+            settings.gameplay.ny,
+            settings.gameplay.piece_rotation
         )
         for piece in tqdm(self.pieces.values(), desc="Building quad-tree"):
             self.quadtree.insert(piece, piece.bbox)
 
     def to_dict(self):
         return {
-            'settings': self.settings,
+            'gameplay_settings': asdict(settings.gameplay),
+            'window_settings': asdict(settings.window),
+            'image_settings': asdict(settings.image),
             'pieces': self.pieces,
             'trays': self.trays,
             'current_max_z_level': self.current_max_z_level,
@@ -54,7 +56,7 @@ class Model(EventDispatcher):
 
     @classmethod
     def from_dict(cls, data):
-        model = cls(data['settings'])
+        model = cls()
         model.pieces = data['pieces']
         model.trays = data['trays']
         model.current_max_z_level = data['current_max_z_level']
@@ -129,7 +131,7 @@ class Model(EventDispatcher):
                 Point(piece.x, piece.y),
                 Point(neighbour.x, neighbour.y)
             )
-            if dist < self.settings.snap_distance:
+            if dist < settings.gameplay.snap_distance:
                 piece.x = neighbour.x
                 piece.y = neighbour.y
                 neighbour.z = piece.z
@@ -219,7 +221,7 @@ class Model(EventDispatcher):
             )
 
     def rotate_piece_at_coordinate(self, x, y, direction):
-        if not self.settings.piece_rotation:
+        if not settings.gameplay.piece_rotation:
             return
         if (piece := self.piece_at_coordinate(x, y)) is None:
             return
@@ -269,8 +271,8 @@ class Model(EventDispatcher):
 
     @property
     def percent_complete(self):
-        total_moves = self.settings.num_pieces - 1
-        moves_made = self.settings.num_pieces - len(self.pieces)
+        total_moves = settings.gameplay.num_pieces - 1
+        moves_made = settings.gameplay.num_pieces - len(self.pieces)
         return 100 * moves_made / total_moves
 
     def _tray_is_visible(self, tray):
@@ -302,7 +304,7 @@ class Model(EventDispatcher):
     def _pieces_at_location(self, x, y):
         for piece in self.quadtree.intersect(bbox=(x, y, x, y)):
             if (self.trays.is_visible(piece.pid)
-                    and piece.contains(Point(x, y), self.settings.nx)):
+                    and piece.contains(Point(x, y), settings.gameplay.nx)):
                 yield piece
 
     def _top_piece_at_location(self, x, y):
@@ -317,14 +319,14 @@ class Model(EventDispatcher):
             self.timer.pause()
             self.dispatch_event('on_win', self.elapsed_seconds)
             save_statistics(
-                image_path=self.settings.image_path,
-                num_pieces=self.settings.num_pieces,
-                num_intended_pieces=self.settings.num_intended_pieces,
-                image_width=self.settings.image_width,
-                image_height=self.settings.image_height,
-                snap_distance=self.settings.snap_distance,
+                image_path=settings.image.path,
+                num_pieces=settings.gameplay.num_pieces,
+                num_intended_pieces=settings.gameplay.num_intended_pieces,
+                image_width=settings.image.width,
+                image_height=settings.image.height,
+                snap_distance=settings.gameplay.snap_distance,
                 start_time=self.start_time,
-                piece_rotation=self.settings.piece_rotation,
+                piece_rotation=settings.gameplay.piece_rotation,
                 cheated=self.cheated,
                 elapsed_seconds=self.elapsed_seconds
             )
@@ -333,14 +335,13 @@ class Model(EventDispatcher):
         return (
             self.current_max_z_level == other.current_max_z_level,
             self.pieces == other.pieces,
-            self.settings == other.settings,
             self.trays == other.trays,
             self.quadtree == other.quadtree,
         )
 
     def __str__(self):
-        image_name = pathlib.Path(self.settings.image_path).stem
-        return f"{image_name}_{self.settings.num_pieces}"
+        image_name = pathlib.Path(settings.image.path).stem
+        return f"{image_name}_{settings.gameplay.num_pieces}"
 
 
 Model.register_event_type('on_piece_rotated')
@@ -529,6 +530,7 @@ class Timer:
 
 
 def make_jigsaw_cut(image_width, image_height, nx, ny, random_rotation=False):
+    # TODO: with global settings, the input params are no longer needed?
     num_edges = 2 * nx * ny - nx - ny
     num_pieces = nx * ny
     nv = (nx - 1) * ny

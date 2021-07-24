@@ -6,28 +6,31 @@ from compress_pickle import dump, load
 
 from src.model import Model
 from src.view import View, Jigsaw
+import src.settings as settings
 
 
 class Controller:
-    def __init__(self, puzzle_settings, window_settings):
-        self.window = Jigsaw(**window_settings)
+    def __init__(self):
+        self.window = Jigsaw()
         self.window.push_handlers(self)
         self.model = None
         self.view = None
-        self._new_puzzle(puzzle_settings)
+        self._new_puzzle()
 
-    def _new_puzzle(self, settings):
-        texture = pyglet.image.load(settings.image_path).get_texture()
-        settings.set_dimensions(texture.width, texture.height)
+    def _new_puzzle(self):
+        texture = pyglet.image.load(settings.image.path).get_texture()
+        settings.image.width = texture.width
+        settings.image.height = texture.height
+        settings.gameplay.set_dimensions()
 
-        self.model = Model(settings)
+        self.model = Model()
         self.model.reset()
         self.view = View(self.window)
         self.view.reset(
             texture,
             self.model.get_piece_data(),
             self.model.trays.visible_trays,
-            settings
+
         )
 
         self.model.push_handlers(self)
@@ -37,10 +40,14 @@ class Controller:
         self.model.toggle_pause(False)
         self.view.toggle_pause(False)
 
-    def on_new_game(self, settings):
+    def on_new_game(self, s):
         self.window.pop_handlers()
         self.view.destroy_pieces()
-        self._new_puzzle(settings)
+
+        settings.image.path = s['image_path']
+        settings.gameplay.num_intended_pieces = s['num_intended_pieces']
+        settings.gameplay.piece_rotation = s['piece_rotation']
+        self._new_puzzle()
 
     def on_quicksave(self):
         print("quicksave!")
@@ -64,16 +71,18 @@ class Controller:
             compression='bz2',
             set_default_extension=False
         )
-        settings = data['settings']
+        settings.gameplay = settings.Gameplay(**data['gameplay_settings'])
+        settings.window = settings.Window(**data['window_settings'])
+        settings.image = settings.Image(**data['image_settings'])
+
         self.model = Model.from_dict(data)
-        texture = pyglet.image.load(settings.image_path).get_texture()
+        texture = pyglet.image.load(settings.image.path).get_texture()
 
         self.view = View(self.window)
         self.view.reset(
             texture=texture,
             piece_data=self.model.get_piece_data(),
             visible_trays=self.model.trays.visible_trays,
-            settings=settings
         )
 
         self.model.push_handlers(self)
