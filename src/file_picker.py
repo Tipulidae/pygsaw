@@ -8,13 +8,21 @@ from tkinter.filedialog import askopenfilename
 
 
 class FilePicker(tk.Frame):
-    def __init__(self, *args, callback=None, image_path='resources', **kwargs):
+    def __init__(
+            self,
+            *args,
+            callback=None,
+            image_path=None,
+            intended_pieces=None,
+            piece_rotation=False,
+            **kwargs):
         super().__init__(*args, **kwargs)
         self.pack()
         self.pattern = re.compile('$|^[1-9][0-9]*')
         self.image_path = image_path
-        self.image_label = None
-        self.num_pieces = tk.IntVar(value=200)
+        self.image_label = image_path
+        self.num_pieces = tk.IntVar(value=intended_pieces)
+        self.piece_rotation = tk.BooleanVar(value=piece_rotation)
         self.create_widgets()
         self.callback = callback
 
@@ -38,6 +46,12 @@ class FilePicker(tk.Frame):
             textvariable=self.num_pieces,
             validate='key',
             validatecommand=(command, '%P')
+        ).pack()
+
+        tk.Checkbutton(
+            self,
+            text='Piece rotation',
+            variable=self.piece_rotation
         ).pack()
 
         tk.Button(self, text='Done', command=self.done).pack()
@@ -68,18 +82,32 @@ class FilePicker(tk.Frame):
             self.image_label['text'] = self.image_path
 
     def done(self):
-        self.callback(
-            self.image_path,
-            self.num_pieces.get()
-        )
+        settings = {
+            'num_intended_pieces': self.num_pieces.get(),
+            'image_path': self.image_path,
+            'piece_rotation': self.piece_rotation.get()
+        }
+        self.callback(settings)
         self.master.destroy()
 
     def validate_entry(self, entry):
         return self.pattern.fullmatch(entry) is not None
 
 
-def select_image(callback, image_path):
+def select_image(callback, image_path, intended_pieces, piece_rotation):
     root = tk.Tk()
-    app = FilePicker(master=root, callback=callback, image_path=image_path)
+    # TODO:
+    # Another option here is to access the settings directly, and then apply
+    # the settings in the done-method. The callback would then need no
+    # arguments, and is only used to start the new game.
+    # On the other hand, I will refactor this stuff soon anyway, when I add
+    # the gui.
+    app = FilePicker(
+        master=root,
+        callback=callback,
+        image_path=image_path,
+        intended_pieces=intended_pieces,
+        piece_rotation=piece_rotation
+    )
     root.geometry('500x300')
     app.mainloop()

@@ -1,4 +1,4 @@
-from model import Tray, Model
+from src.model import Tray, Model
 
 
 class TestTray:
@@ -117,7 +117,7 @@ class TestTray:
 class TestSerialize:
     def test_can_serialize_model(self):
         model = Model()
-        model.reset('kitten.png', 1000, 1000, 9)
+        model.reset()
         model_dict = model.to_dict()
         new_model = Model.from_dict(model_dict)
         assert model == new_model

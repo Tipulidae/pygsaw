@@ -20,6 +20,12 @@ class Point:
             (p2.x - p1.x) ** 2 + (p2.y - p1.y) ** 2
         )
 
+    def rotate(self, angle, pivot):
+        p = self - pivot
+        c = math.cos(angle)
+        s = math.sin(angle)
+        return Point(p.x * c - p.y * s, p.x * s + p.y * c) + pivot
+
     def dot(self, p):
         return Point(self.x * p.x, self.y * p.y)
 
@@ -52,6 +58,16 @@ class Rectangle:
     right: float = 0
     top: float = 0
     bottom: float = 0
+
+    def flip(self, amount):
+        amount %= 4
+        while amount > 0:
+            r = Rectangle(self.left, self.right, self.top, self.bottom)
+            self.left = -r.top
+            self.right = -r.bottom
+            self.bottom = r.left
+            self.top = r.right
+            amount -= 1
 
 
 @dataclass
@@ -318,3 +334,23 @@ def bounding_box(polygon):
         top=top,
         bottom=bottom
     )
+
+
+def center_point(points):
+    box = bounding_box(points)
+    return Point(
+        (box.left + box.right) / 2,
+        (box.top + box.bottom) / 2
+    )
+
+
+def rotate_points(points, pivot, angle):
+    c = math.cos(angle)
+    s = math.sin(angle)
+    rotated_points = []
+    for p in points:
+        p -= pivot
+        p = Point(p.x*c - p.y*s, p.x*s + p.y*c)
+        rotated_points.append(p + pivot)
+
+    return rotated_points

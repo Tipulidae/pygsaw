@@ -10,6 +10,7 @@ dependencies:
   - pillow=7.2
   - aggdraw=1.3.11
   - humanfriendly=9.1
+  - pyinstaller
   - pip:
     - vecrec
     - pyqtree==1.0.0

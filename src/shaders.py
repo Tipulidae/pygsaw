@@ -6,10 +6,12 @@ piece_vs = """#version 330 core
     in vec4 position;
     in vec4 colors;
     in vec3 tex_coords;
+    in float orientation;
 
     out vec4 vertex_colors;
     out vec3 texture_coords;
     out vec4 col;
+    out vec3 light_dir;
 
     uniform WindowBlock
     {
@@ -19,6 +21,7 @@ piece_vs = """#version 330 core
 
     uniform vec3 translate;
     uniform float hidden;
+    uniform mat4 rotation;
 
     mat4 m_translation = mat4(1.0);
 
@@ -27,10 +30,20 @@ piece_vs = """#version 330 core
         if (hidden > 0.0) {
             gl_Position = vec4(0, 0, 0, 0);
         } else {
+            if (orientation == 0.0) {
+                light_dir = vec3(-0.5, -0.5, 1);
+            } else if (orientation == 1) {
+                light_dir = vec3(0.5, -0.5, 1);
+            } else if (orientation == 2) {
+                light_dir = vec3(0.5, 0.5, 1);
+            } else {
+                light_dir = vec3(-0.5, 0.5, 1);
+            }
+            light_dir = normalize(light_dir);
             texture_coords = tex_coords;
             col = colors;
             m_translation[3].xyz = translate;
-            gl_Position = window.projection * window.view * m_translation * position;
+            gl_Position = window.projection * window.view * m_translation * rotation * position;
         }
     }
 """
@@ -38,11 +51,13 @@ piece_vs = """#version 330 core
 piece_fs = """#version 330 core
     in vec4 col;
     in vec3 texture_coords;
+    in vec3 light_dir;
     out vec4 final_colors;
 
     uniform sampler2D diffuse_map;
     uniform sampler2D normal_map;
     uniform float hide_borders;
+    uniform mat4 rotation;
 
     void main()
     {
@@ -57,9 +72,10 @@ piece_fs = """#version 330 core
         
             vec3 normal = texture(normal_map, texture_coords.xy).rgb;
             normal = normalize(normal * 2.0 - 1.0);
-            vec3 ambient = 0.1 * color;
+            normal = transpose(mat3(rotation)) * normal;
+            vec3 ambient = 0.18 * color;
     
-            vec3 light_dir = normalize(vec3(-0.5,-0.5, 1));
+            //vec3 light_dir = normalize(dir);
             float diff = max(dot(light_dir, normal), 0.0);
             vec3 diffuse = diff * color;
     
@@ -94,6 +110,35 @@ shape_vs = """#version 330 core
 """
 
 shape_fs = """#version 330 core
+    in vec4 vertex_colors;
+    out vec4 final_color;
+
+    void main()
+    {
+        final_color = vertex_colors;
+    }
+"""
+
+gui_vs = """#version 330 core
+    in vec4 position;
+    in vec4 colors;
+
+    out vec4 vertex_colors;
+
+    uniform WindowBlock
+    {
+        mat4 projection;
+        mat4 view;
+    } window;
+
+    void main()
+    {
+        gl_Position = window.projection * window.view * position;
+        vertex_colors = colors;
+    }
+"""
+
+gui_fs = """#version 330 core
     in vec4 vertex_colors;
     out vec4 final_color;
 
@@ -167,6 +212,11 @@ def make_table_shader():
     fs = Shader(table_fs, 'fragment')
     return ShaderProgram(vs, fs)
 
+
+def make_gui_shader():
+    vs = Shader(gui_vs, 'vertex')
+    fs = Shader(gui_fs, 'fragment')
+    return ShaderProgram(vs, fs)
 
 
 def write_to_uniform(program, name, data):
